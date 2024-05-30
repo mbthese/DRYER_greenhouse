@@ -1,0 +1,14 @@
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+
+# File types to ignore
+*.csv
+*.jpeg
+*.png
+*.txt
+
+# Ignore all files in resources and results folders
+resources/
+results/

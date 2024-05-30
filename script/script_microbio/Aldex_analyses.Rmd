@@ -1,0 +1,1294 @@
+---
+title: "Heatmap"
+author: "Marion Boisseaux"
+date: "2023-09-05"
+output: html_document
+---
+
+Script inspired from :https://github.com/Steph0522/Root_communities_castorbean_paper. and https://www.nature.com/articles/s41597-020-0427-5#code-availability 
+
+The differentially abundant OTUs across species and water regimes determined using the ANOVA-Like differential expression test within the 
+ALDEx2 package (v.1.25.1). 
+
+A Kruskal-Wallis test was used to determine 
+the effect of water regime with the ‘aldex.kw’ function on an 
+aldex.clr object, and paired tests between water regime with 
+Wilcoxon test were done using aldex function choosing effect = T, test =
+"t". Benjamini-Hochberg corrected p values < 0.05 were considered 
+significant (Gloor, 2015).
+
+ANOVA-Like Differential Expression tool for high throughput sequencing data: for differential (relative) abundance analysis of high throughput sequencing count-compositional data.
+
+The ALDEx2 package estimates per-feature technical variation within each sample using Monte-Carlo instances drawn from the Dirichlet distribution. Sampling from this distribution returns the posterior probability distribution of the observed data under a repeated sampling model. All outputs from ALDEx2 are outputs from the posterior distributions, either expected values or confidence intervals.
+
+ALDEx2 uses the centred log-ratio (clr) transformation (or closely related log-ratio transforms) which ensures the data are scale invariant and sub-compositionally coherent66 Aitchison (1986). The scale invariance property removes the need for a between sample data normalization step since the data are all placed on a consistent numerical co-ordinate. The sub-compositional coherence property ensures that the answers obtained are consistent when parts of the dataset are removed (e.g., removal of rRNA reads from RNA-seq studies or rare OTU species from 16S rRNA gene amplicon studies).
+
+
+
+#DROUGHT
+
+#FUNGI
+
+##D1
+```{r}
+library(CoDaSeq)
+library(ALDEx2)
+load("/DRYER_greenhouse/results/Metabarlist_serre_ITS_AMVG42-230505_clean.Rdata")
+rownames(AMVG42_230505_ITS_clean$samples) <- AMVG42_230505_ITS_clean$samples$sample_id
+leaf_phy <- AMVG42_230505_ITS_clean
+leaf_phy$samples$Name <- NA
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Epe.fal"] <- "E. falcata"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Iry.hos"] <- "I. hostmannii"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Jac.cop"] <- "J. copaia"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Pte.off"] <- "P. officinalis"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Sym.off"] <- "S. globulifera"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Tac.mel"] <- "T. melinonii"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Vir.sur"] <- "V. surinamensis"
+
+fun_drought <- subset_metabarlist(leaf_phy, table = "samples", indices = leaf_phy$samples$Time %in% c("t21"))
+
+aldex_drought <- t(fun_drought$reads)
+treatment_labels <- fun_drought$samples$Treatment
+existing_colnames <- colnames(aldex_drought)
+new_colnames <- paste(treatment_labels, sep = "_")
+colnames(aldex_drought) <- new_colnames
+
+table(grepl('C0', colnames(aldex_drought)))
+table(grepl('D1', colnames(aldex_drought)))
+
+conds<- c(rep("C0", 18), rep("D1", 32))
+
+# Sample column names from your dataframe
+colnames <- colnames(aldex_drought)
+
+# Extract labels (C0, D1, D2, D3) from the column names
+labels <- gsub(".*_", "", colnames)
+
+# Define the order of labels
+label_order <- c("C0", "D1")
+ordered_colnames <- colnames[order(match(labels, label_order))]
+aldex_drought_ordered <- aldex_drought[, ordered_colnames]
+
+
+f = aldex_drought_ordered
+
+f <- codaSeq.filter(t(f), min.reads=10000, min.prop=0.001, min.occurrence = 0.1, samples.by.row=FALSE)
+
+table(grepl('C0', rownames(f)))
+table(grepl('D1', rownames(f)))
+#analysis t-test
+conds<- c(rep("C0", 18), rep("D1", 32))
+label_order <- c("C0", "D1")
+
+f.x<- aldex(t(f), mc.samples = 1000, denom="all", verbose = TRUE, conds,  test="t", effect=TRUE, paired.test = F)
+
+rownames(f.x) -> f.x$id
+
+f.x2<- left_join(f.x, leaf_phy$motus) 
+
+a<-f.x2[,c(1:11,16:21)]
+
+write.csv(f.x2,"DroughtD1.csv")
+#plot
+
+a$sign_effect <- ifelse(a$effect < 0, "Control enriched", "D1 enriched")
+a$Genus <-str_replace(string = a$Genus, pattern = "g__", replacement = " ")
+a$Genus_Species <- paste0(a$Genus, a$Species)
+a$Genus_Species <-str_replace(string = a$Genus_Species, pattern = "NA", replacement = " ")
+
+
+# Plot
+D1_enriched <- ggplot(a) +
+  aes(x = effect, y = Genus_Species, color = sign_effect, fill = sign_effect) +
+  geom_boxplot() +
+  geom_vline(xintercept = 0) +  
+  scale_color_manual(values = c("D1 enriched" = "#8CB425", "Control enriched" = "#6DA0F8")) +
+  scale_fill_manual(values = c("D1 enriched" = "#8CB425", "Control enriched" = "#6DA0F8")) +
+  theme_minimal(base_size = 16)+
+  theme(axis.text.y = element_text(face="italic"),axis.title.y = element_blank(), legend.title = element_blank())
+D1_enriched
+#effect - median effect size: diff.btw / max(diff.win) for all instances: The effect size metric used by ALDEx2 is a standardized distributional effect size metric developed specifically for this package. The measure is somewhat robust, allowing up to 20% of the samples to be outliers before the value is affected, returns an effect size that is 71% the size of Cohen’s d on a Normal distribution, and requires at worst twice the number of samples as fully parametric methods (which are not robust) would to estimate values with the same precision. The metric is equally valid for Normal, random uniform and Cauchy distributions^((???) submitted). We suggest that an effect size cutoff of 1 or greater be used when analyzing HTS datasets. If preferred the user can also set a fold-change cutoff as is commonly done with P value based methods.
+```
+
+
+##D2
+```{r}
+library(CoDaSeq)
+
+load("/DRYER_greenhouse/results/Metabarlist_serre_ITS_AMVG42-230505_clean.Rdata")
+rownames(AMVG42_230505_ITS_clean$samples) <- AMVG42_230505_ITS_clean$samples$sample_id
+leaf_phy <- AMVG42_230505_ITS_clean
+leaf_phy$samples$Name <- NA
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Epe.fal"] <- "E. falcata"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Iry.hos"] <- "I. hostmannii"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Jac.cop"] <- "J. copaia"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Pte.off"] <- "P. officinalis"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Sym.off"] <- "S. globulifera"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Tac.mel"] <- "T. melinonii"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Vir.sur"] <- "V. surinamensis"
+
+fun_drought <- subset_metabarlist(leaf_phy, table = "samples", indices = leaf_phy$samples$Time %in% c("t27"))
+
+aldex_drought <- t(fun_drought$reads)
+treatment_labels <- fun_drought$samples$Treatment
+existing_colnames <- colnames(aldex_drought)
+new_colnames <- paste(treatment_labels, sep = "_")
+colnames(aldex_drought) <- new_colnames
+
+table(grepl('C0', colnames(aldex_drought)))
+table(grepl('D2', colnames(aldex_drought)))
+
+conds<- c(rep("C0", 19), rep("D2", 30))
+
+# Sample column names from your dataframe
+colnames <- colnames(aldex_drought)
+
+# Extract labels (C0, D1, D2, D3) from the column names
+labels <- gsub(".*_", "", colnames)
+
+# Define the order of labels
+label_order <- c("C0", "D2")
+ordered_colnames <- colnames[order(match(labels, label_order))]
+aldex_drought_ordered <- aldex_drought[, ordered_colnames]
+
+
+f = aldex_drought_ordered
+
+f <- codaSeq.filter(t(f), min.reads=10000, min.prop=0.001, min.occurrence = 0.1, samples.by.row=FALSE)
+
+table(grepl('C0', rownames(f)))
+table(grepl('D2', rownames(f)))
+#analysis t-test
+conds<- c(rep("C0", 19), rep("D2", 30))
+label_order <- c("C0", "D2")
+
+f.x<- aldex(t(f), mc.samples = 1000, denom="all", verbose = TRUE, conds,  test="t", effect=TRUE, paired.test = F)
+
+rownames(f.x) -> f.x$id
+
+f.x2<- left_join(f.x, leaf_phy$motus) 
+
+b<-f.x2[,c(1:11,16:22)]
+
+write.csv(b,"DroughtD2.csv")
+
+b$sign_effect <- ifelse(b$effect < 0, "Control enriched", "D2 enriched")
+b$Genus <-str_replace(string = b$Genus, pattern = "g__", replacement = " ")
+b$Genus_Species <- paste0(b$Genus, b$Species)
+b$Genus_Species <-str_replace(string = b$Genus_Species, pattern = "NA", replacement = " ")
+
+# Plot
+D2_enriched <- ggplot(b) +
+  aes(x = effect, y = Genus_Species, color = sign_effect, fill= sign_effect) +
+  geom_boxplot() +
+  geom_vline(xintercept = 0) +  
+  scale_color_manual(values = c("D2 enriched" = "#ECE320", "Control enriched" = "#6DA0F8")) +
+   scale_fill_manual(values = c("D2 enriched" = "#ECE320", "Control enriched" = "#6DA0F8")) +
+   theme_minimal(base_size = 16)+
+  theme(axis.text.y = element_text(face="italic"), axis.title.y = element_blank(), legend.title = element_blank())
+```
+
+
+
+
+##D3
+```{r}
+library(CoDaSeq)
+
+load("/DRYER_greenhouse/results/Metabarlist_serre_ITS_AMVG42-230505_clean.Rdata")
+rownames(AMVG42_230505_ITS_clean$samples) <- AMVG42_230505_ITS_clean$samples$sample_id
+leaf_phy <- AMVG42_230505_ITS_clean
+leaf_phy$samples$Name <- NA
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Epe.fal"] <- "E. falcata"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Iry.hos"] <- "I. hostmannii"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Jac.cop"] <- "J. copaia"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Pte.off"] <- "P. officinalis"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Sym.off"] <- "S. globulifera"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Tac.mel"] <- "T. melinonii"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Vir.sur"] <- "V. surinamensis"
+
+fun_drought <- subset_metabarlist(leaf_phy, table = "samples", indices = leaf_phy$samples$Time %in% c("t71"))
+
+aldex_drought <- t(fun_drought$reads)
+treatment_labels <- fun_drought$samples$Treatment
+existing_colnames <- colnames(aldex_drought)
+new_colnames <- paste(treatment_labels, sep = "_")
+colnames(aldex_drought) <- new_colnames
+
+table(grepl('C0', colnames(aldex_drought)))
+table(grepl('D3', colnames(aldex_drought)))
+
+conds<- c(rep("C0", 13), rep("D3", 28))
+
+# Sample column names from your dataframe
+colnames <- colnames(aldex_drought)
+
+# Extract labels (C0, D1, D2, D3) from the column names
+labels <- gsub(".*_", "", colnames)
+
+# Define the order of labels
+label_order <- c("C0", "D3")
+ordered_colnames <- colnames[order(match(labels, label_order))]
+aldex_drought_ordered <- aldex_drought[, ordered_colnames]
+
+
+f = aldex_drought_ordered
+
+f <- codaSeq.filter(t(f), min.reads=10000, min.prop=0.001, min.occurrence = 0.1, samples.by.row=FALSE)
+
+table(grepl('C0', rownames(f)))
+table(grepl('D3', rownames(f)))
+#analysis t-test
+conds<- c(rep("C0", 13), rep("D3", 28))
+label_order <- c("C0", "D3")
+
+f.x<- aldex(t(f), mc.samples = 1000, denom="all", verbose = TRUE, conds,  test="t", effect=TRUE, paired.test = F)
+
+rownames(f.x) -> f.x$id
+
+f.x2<- left_join(f.x, leaf_phy$motus) 
+
+c<-f.x2[,c(1:11,16:22)] 
+
+c <- c %>% filter(we.eBH < 0.05) 
+
+write.csv(c,"DroughtD3.csv")
+
+c$sign_effect <- ifelse(c$effect < 0, "Control enriched", "D3 enriched")
+c$Family_Genus <- paste0(c$Family, c$Genus)
+
+c$Genus <-str_replace(string = c$Genus, pattern = "g__", replacement = " ")
+c$Genus_Species <- paste0(c$Genus, c$Species)
+c$Genus_Species <-str_replace(string = c$Genus_Species, pattern = "NA", replacement = " ")
+# c$Genus_Species[3] <-"Verrucisporota_NA"
+# c$Genus_Species[6] <-"Nigrospora_NA"
+# c$Genus_Species[13] <-"Neodevriesia_NA"
+# c$Genus_Species[14] <-"Nigrospora_NA2"
+# c$Genus_Species[15] <-"Curvularia_NA"
+# c$Genus_Species[18] <-"Penicillium_NA"
+# c$Genus_Species[18] <-"Penicillium_NA2"
+# c$Genus_Species[20] <-"Exobasidium_NA"
+# c$Genus_Species[21] <-"Acremonium_NA"
+# c$Genus_Species[24] <-"Acremonium_NA2"
+# 
+# Plot
+D3_enriched <- ggplot(c) +
+  aes(x = effect, y = Genus_Species, color = sign_effect, fill= sign_effect) +
+  geom_boxplot() +
+  geom_vline(xintercept = 0) +
+  scale_color_manual(values = c("D3 enriched" = "#DF5220", "Control enriched" = "#6DA0F8")) +
+  scale_fill_manual(values = c("D3 enriched" = "#DF5220", "Control enriched" = "#6DA0F8")) +
+  theme_minimal(base_size = 16) +
+  theme(axis.text.y = element_text(face="italic"), axis.title.y = element_blank(), legend.title = element_blank())
+  
+D3_enriched
+```
+
+```{r}
+fungi_drought <- ggarrange(D1_enriched, D2_enriched, D3_enriched, ncol=1, nrow=3, labels = c("B.", "D.", "F."))
+fungi_drought
+```
+
+
+#BACTERIA
+
+##D1
+```{r}
+load("/DRYER_greenhouse/results/Metabarlist_serre_16S_AMVG51-230505_clean.Rdata")
+
+rownames(AMVG51_230505_16S_clean$samples) <- AMVG51_230505_16S_clean$samples$sample_id
+leaf_phy <- AMVG51_230505_16S_clean
+leaf_phy$samples$Name <- NA
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Epe.fal"] <- "E. falcata"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Iry.hos"] <- "I. hostmannii"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Jac.cop"] <- "J. copaia"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Pte.off"] <- "P. officinalis"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Sym.off"] <- "S. globulifera"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Tac.mel"] <- "T. melinonii"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Vir.sur"] <- "V. surinamensis"
+
+bac_drought <- subset_metabarlist(leaf_phy, table = "samples", indices = leaf_phy$samples$Time %in% c("t21"))
+
+aldex_drought <- t(bac_drought$reads)
+treatment_labels <- bac_drought$samples$Treatment
+existing_colnames <- colnames(aldex_drought)
+new_colnames <- paste(treatment_labels, sep = "_")
+colnames(aldex_drought) <- new_colnames
+
+table(grepl('C0', colnames(aldex_drought)))
+table(grepl('D1', colnames(aldex_drought)))
+
+conds<- c(rep("C0", 17), rep("D1", 33))
+
+# Sample column names from your dataframe
+colnames <- colnames(aldex_drought)
+
+# Extract labels (C0, D1, D1, D3) from the column names
+labels <- gsub(".*_", "", colnames)
+
+# Define the order of labels
+label_order <- c("C0", "D1")
+ordered_colnames <- colnames[order(match(labels, label_order))]
+aldex_drought_ordered <- aldex_drought[, ordered_colnames]
+
+
+f = aldex_drought_ordered
+
+f <- codaSeq.filter(t(f), min.reads=10000, min.prop=0.001, min.occurrence = 0.1, samples.by.row=FALSE)
+
+table(grepl('C0', rownames(f)))
+table(grepl('D1', rownames(f)))
+#analysis t-test
+conds<- c(rep("C0", 17), rep("D1", 33))
+label_order <- c("C0", "D1")
+
+f.x<- aldex(t(f), mc.samples = 1000, denom="all", verbose = TRUE, conds,  test="t", effect=TRUE, paired.test = F)
+
+rownames(f.x) -> f.x$id
+
+f.x2<- left_join(f.x, leaf_phy$motus) 
+
+a<-f.x2[,c(1:11,16:22)] 
+
+a <- a %>% filter(we.eBH < 0.05) 
+
+write.csv(a,"DroughtD1_bac.csv")
+
+#plot
+a$sign_effect <- ifelse(a$effect < 0, "Control enriched", "D1 enriched")
+a$Family_Genus <- paste0(a$Family, a$Genus)
+D1_enriched_bac <- ggplot(a) +
+  aes(x = effect, y = Genus, color = sign_effect, fill=sign_effect) +
+  geom_boxplot() +
+  geom_vline(xintercept = 0) +  
+  scale_color_manual(values = c("D1 enriched" = "#8CB425", "Control enriched" = "#6DA0F8")) +
+   scale_fill_manual(values = c("D1 enriched" = "#8CB425", "Control enriched" = "#6DA0F8"))+
+  theme_minimal(base_size = 16)+
+  theme(axis.text.y = element_text(face="italic"), axis.title.y = element_blank(), legend.title = element_blank(), legend.position = "none")
+```
+
+##D2
+
+```{r}
+load("/DRYER_greenhouse/results/Metabarlist_serre_16S_AMVG51-230505_clean.Rdata")
+
+rownames(AMVG51_230505_16S_clean$samples) <- AMVG51_230505_16S_clean$samples$sample_id
+leaf_phy <- AMVG51_230505_16S_clean
+leaf_phy$samples$Name <- NA
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Epe.fal"] <- "E. falcata"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Iry.hos"] <- "I. hostmannii"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Jac.cop"] <- "J. copaia"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Pte.off"] <- "P. officinalis"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Sym.off"] <- "S. globulifera"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Tac.mel"] <- "T. melinonii"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Vir.sur"] <- "V. surinamensis"
+
+bac_drought <- subset_metabarlist(leaf_phy, table = "samples", indices = leaf_phy$samples$Time %in% c("t27"))
+
+aldex_drought <- t(bac_drought$reads)
+treatment_labels <- bac_drought$samples$Treatment
+existing_colnames <- colnames(aldex_drought)
+new_colnames <- paste(treatment_labels, sep = "_")
+colnames(aldex_drought) <- new_colnames
+
+table(grepl('C0', colnames(aldex_drought)))
+table(grepl('D2', colnames(aldex_drought)))
+
+conds<- c(rep("C0", 19), rep("D2", 30))
+
+# Sample column names from your dataframe
+colnames <- colnames(aldex_drought)
+
+# Extract labels (C0, D1, D2, D3) from the column names
+labels <- gsub(".*_", "", colnames)
+
+# Define the order of labels
+label_order <- c("C0", "D2")
+ordered_colnames <- colnames[order(match(labels, label_order))]
+aldex_drought_ordered <- aldex_drought[, ordered_colnames]
+
+
+f = aldex_drought_ordered
+
+f <- codaSeq.filter(t(f), min.reads=10000, min.prop=0.001, min.occurrence = 0.1, samples.by.row=FALSE)
+
+table(grepl('C0', rownames(f)))
+table(grepl('D2', rownames(f)))
+#analysis t-test
+conds<- c(rep("C0", 19), rep("D2", 30))
+label_order <- c("C0", "D2")
+
+f.x<- aldex(t(f), mc.samples = 1000, denom="all", verbose = TRUE, conds,  test="t", effect=TRUE, paired.test = F)
+
+rownames(f.x) -> f.x$id
+
+f.x2<- left_join(f.x, leaf_phy$motus) 
+
+b<-f.x2[,c(1:11,16:22)] 
+
+b <- b %>% filter(we.eBH < 0.05) 
+
+write.csv(b,"DroughtD2_bac.csv")
+
+b$sign_effect <- ifelse(b$effect < 0, "Control enriched", "D2 enriched")
+
+# Plot
+D2_enriched_bac <- ggplot(b) +
+  aes(x = effect, y = Genus, color = sign_effect, fill= sign_effect) +
+  geom_boxplot() +
+  geom_vline(xintercept = 0) +  
+  scale_color_manual(values = c("D2 enriched" = "#ECE320", "Control enriched" = "#6DA0F8")) +
+   scale_fill_manual(values = c("D2 enriched" = "#ECE320", "Control enriched" = "#6DA0F8")) +
+   theme_minimal(base_size = 16)+
+  theme(axis.text.y = element_text(face="italic"),axis.title.y = element_blank(), legend.title = element_blank(), legend.position = "none")
+```
+
+##D3
+
+```{r}
+load("/DRYER_greenhouse/results/Metabarlist_serre_16S_AMVG51-230505_clean.Rdata")
+
+rownames(AMVG51_230505_16S_clean$samples) <- AMVG51_230505_16S_clean$samples$sample_id
+leaf_phy <- AMVG51_230505_16S_clean
+leaf_phy$samples$Name <- NA
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Epe.fal"] <- "E. falcata"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Iry.hos"] <- "I. hostmannii"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Jac.cop"] <- "J. copaia"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Pte.off"] <- "P. officinalis"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Sym.off"] <- "S. globulifera"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Tac.mel"] <- "T. melinonii"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Vir.sur"] <- "V. surinamensis"
+
+bac_drought <- subset_metabarlist(leaf_phy, table = "samples", indices = leaf_phy$samples$Time %in% c("t71"))
+
+aldex_drought <- t(bac_drought$reads)
+treatment_labels <- bac_drought$samples$Treatment
+existing_colnames <- colnames(aldex_drought)
+new_colnames <- paste(treatment_labels, sep = "_")
+colnames(aldex_drought) <- new_colnames
+
+table(grepl('C0', colnames(aldex_drought)))
+table(grepl('D3', colnames(aldex_drought)))
+
+conds<- c(rep("C0", 14), rep("D3", 19))
+
+# Sample column names from your dataframe
+colnames <- colnames(aldex_drought)
+
+# Extract labels (C0, D1, D2, D3) from the column names
+labels <- gsub(".*_", "", colnames)
+
+# Define the order of labels
+label_order <- c("C0", "D3")
+ordered_colnames <- colnames[order(match(labels, label_order))]
+aldex_drought_ordered <- aldex_drought[, ordered_colnames]
+
+
+f = aldex_drought_ordered
+
+f <- codaSeq.filter(t(f), min.reads=1000, min.prop=0.001, min.occurrence = 0.1, samples.by.row=FALSE)
+
+table(grepl('C0', rownames(f)))
+table(grepl('D3', rownames(f)))
+#analysis t-test
+conds<- c(rep("C0", 14), rep("D3", 19))
+label_order <- c("C0", "D3")
+
+f.x<- aldex(t(f), mc.samples = 1000, denom="all", verbose = TRUE, conds,  test="t", effect=TRUE, paired.test = F)
+
+rownames(f.x) -> f.x$id
+
+f.x2<- left_join(f.x, leaf_phy$motus) 
+
+c<-f.x2[,c(1:11,16:22)] 
+
+c <- c %>% filter(we.eBH < 0.05) 
+
+write.csv(c,"DroughtD3_bac.csv")
+
+c$sign_effect <- ifelse(c$effect < 0, "Control enriched", "D3 enriched")
+
+
+# Plot
+D3_enriched_bac <- ggplot(c) +
+  aes(x = effect, y = Genus, color = sign_effect, fill= sign_effect) +
+  geom_boxplot() +
+  geom_vline(xintercept = 0) +
+  scale_color_manual(values = c("D3 enriched" = "#DF5220", "Control enriched" = "#6DA0F8")) +
+  scale_fill_manual(values = c("D3 enriched" = "#DF5220", "Control enriched" = "#6DA0F8")) +
+  theme_minimal(base_size = 16) +
+  theme(axis.text.y = element_text(face="italic"), axis.title.y = element_blank(), legend.title = element_blank(), legend.position ="none" )
+ 
+```
+
+```{r}
+bac_drought <- ggarrange(D1_enriched_bac, D2_enriched_bac, D3_enriched_bac, ncol=1, nrow=3, labels = c("A.", "C.", "E."),heights = c(0.5,0.6,1))
+bac_drought 
+```
+
+```{r}
+bac_fun_drought<- ggarrange(bac_drought, fungi_drought, ncol=2, nrow=1, labels = c("Bacteria", " Fungi"), widths = c(0.7,1,0.7,1,0.8,1))
+
+ggsave(filename = "./results/microbio/aldex_drought.jpeg", plot = bac_fun_drought, width = 10, height = 12)
+```
+
+
+#RECOVERY
+
+#FUNGI
+
+##From D1
+```{r}
+library(CoDaSeq)
+library(ALDEx2)
+load("/DRYER_greenhouse/results/Metabarlist_serre_ITS_AMVG42-230505_clean.Rdata")
+rownames(AMVG42_230505_ITS_clean$samples) <- AMVG42_230505_ITS_clean$samples$sample_id
+leaf_phy <- AMVG42_230505_ITS_clean
+leaf_phy$samples$Name <- NA
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Epe.fal"] <- "E. falcata"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Iry.hos"] <- "I. hostmannii"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Jac.cop"] <- "J. copaia"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Pte.off"] <- "P. officinalis"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Sym.off"] <- "S. globulifera"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Tac.mel"] <- "T. melinonii"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Vir.sur"] <- "V. surinamensis"
+
+fun_drought <- subset_metabarlist(leaf_phy, table = "samples", indices = leaf_phy$samples$Time %in% c("t51"))
+
+aldex_drought <- t(fun_drought$reads)
+treatment_labels <- fun_drought$samples$Treatment
+existing_colnames <- colnames(aldex_drought)
+new_colnames <- paste(treatment_labels, sep = "_")
+colnames(aldex_drought) <- new_colnames
+
+table(grepl('C0', colnames(aldex_drought)))
+table(grepl('D1', colnames(aldex_drought)))
+
+conds<- c(rep("C0", 15), rep("D1", 28))
+
+# Sample column names from your dataframe
+colnames <- colnames(aldex_drought)
+
+# Extract labels (C0, D1, D2, D3) from the column names
+labels <- gsub(".*_", "", colnames)
+
+# Define the order of labels
+label_order <- c("C0", "D1")
+ordered_colnames <- colnames[order(match(labels, label_order))]
+aldex_drought_ordered <- aldex_drought[, ordered_colnames]
+
+
+f = aldex_drought_ordered
+
+f <- codaSeq.filter(t(f), min.reads=10000, min.prop=0.001, min.occurrence = 0.1, samples.by.row=FALSE)
+
+table(grepl('C0', rownames(f)))
+table(grepl('D1', rownames(f)))
+#analysis t-test
+conds<- c(rep("C0", 15), rep("D1", 28))
+label_order <- c("C0", "D1")
+
+f.x<- aldex(t(f), mc.samples = 1000, denom="all", verbose = TRUE, conds,  test="t", effect=TRUE, paired.test = F)
+
+rownames(f.x) -> f.x$id
+
+f.x2<- left_join(f.x, leaf_phy$motus) 
+
+D1_recov<-f.x2[,c(1:11,16:21)]
+
+write.csv(f.x2,"RecoveryD1.csv")
+#plot
+
+D1_recov <- D1_recov%>% filter(we.eBH < 0.1)
+D1_recov <- D1_recov%>% filter(abs(effect) > 1 )
+
+D1_recov$sign_effect <- ifelse(D1_recov$effect < 0, "Control enriched", "Recovery from D1 enriched")
+D1_recov$Genus <-str_replace(string = D1_recov$Genus, pattern = "g__", replacement = " ")
+D1_recov$Genus_Species <- paste0(D1_recov$Genus, D1_recov$Species)
+D1_recov$Genus_Species <-str_replace(string = D1_recov$Genus_Species, pattern = "NA", replacement = " ")
+
+# Plot
+D1_recov_enriched <- ggplot(D1_recov) +
+  aes(x = effect, y = Genus_Species, color = sign_effect, fill = sign_effect) +
+  geom_boxplot() +
+  geom_vline(xintercept = 0) +  
+  scale_color_manual(values = c("Recovery from D1 enriched" = "#8CB425", "Control enriched" = "#6DA0F8")) +
+  scale_fill_manual(values = c("Recovery from D1 enriched" = "#8CB425", "Control enriched" = "#6DA0F8")) +
+  theme_minimal(base_size = 16)+
+  theme(axis.text.y = element_text(face="italic"),axis.title.y = element_blank(), legend.title = element_blank())
+D1_recov_enriched
+#effect - median effect size: diff.btw / max(diff.win) for all instances: The effect size metric used by ALDEx2 is a standardized distributional effect size metric developed specifically for this package. The measure is somewhat robust, allowing up to 20% of the samples to be outliers before the value is affected, returns an effect size that is 71% the size of Cohen’s d on a Normal distribution, and requires at worst twice the number of samples as fully parametric methods (which are not robust) would to estimate values with the same precision. The metric is equally valid for Normal, random uniform and Cauchy distributions^((???) submitted). We suggest that an effect size cutoff of 1 or greater be used when analyzing HTS datasets. If preferred the user can also set a fold-change cutoff as is commonly done with P value based methods.
+```
+
+##From D2
+```{r}
+load("/DRYER_greenhouse/results/Metabarlist_serre_ITS_AMVG42-230505_clean.Rdata")
+rownames(AMVG42_230505_ITS_clean$samples) <- AMVG42_230505_ITS_clean$samples$sample_id
+leaf_phy <- AMVG42_230505_ITS_clean
+leaf_phy$samples$Name <- NA
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Epe.fal"] <- "E. falcata"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Iry.hos"] <- "I. hostmannii"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Jac.cop"] <- "J. copaia"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Pte.off"] <- "P. officinalis"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Sym.off"] <- "S. globulifera"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Tac.mel"] <- "T. melinonii"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Vir.sur"] <- "V. surinamensis"
+
+fun_drought <- subset_metabarlist(leaf_phy, table = "samples", indices = leaf_phy$samples$Time %in% c("t57"))
+
+aldex_drought <- t(fun_drought$reads)
+treatment_labels <- fun_drought$samples$Treatment
+existing_colnames <- colnames(aldex_drought)
+new_colnames <- paste(treatment_labels, sep = "_")
+colnames(aldex_drought) <- new_colnames
+
+table(grepl('C0', colnames(aldex_drought)))
+table(grepl('D2', colnames(aldex_drought)))
+
+conds<- c(rep("C0", 20), rep("D2", 27))
+
+# Sample column names from your dataframe
+colnames <- colnames(aldex_drought)
+
+# Extract labels (C0, D1, D2, D3) from the column names
+labels <- gsub(".*_", "", colnames)
+
+# Define the order of labels
+label_order <- c("C0", "D2")
+ordered_colnames <- colnames[order(match(labels, label_order))]
+aldex_drought_ordered <- aldex_drought[, ordered_colnames]
+
+
+f = aldex_drought_ordered
+
+f <- codaSeq.filter(t(f), min.reads=10000, min.prop=0.001, min.occurrence = 0.1, samples.by.row=FALSE)
+
+table(grepl('C0', rownames(f)))
+table(grepl('D2', rownames(f)))
+#analysis t-test
+conds<- c(rep("C0", 20), rep("D2", 27))
+label_order <- c("C0", "D2")
+
+f.x<- aldex(t(f), mc.samples = 1000, denom="all", verbose = TRUE, conds,  test="t", effect=TRUE, paired.test = F)
+
+rownames(f.x) -> f.x$id
+
+f.x2<- left_join(f.x, leaf_phy$motus) 
+
+D2_recov<-f.x2[,c(1:11,16:22)]
+
+write.csv(D2_recov,"RecoveryD2.csv")
+
+D2_recov <- D2_recov%>% filter(we.eBH < 0.1)
+D2_recov <- D2_recov%>% filter(abs(effect) > 1 )
+
+D2_recov$sign_effect <- ifelse(D2_recov$effect < 0, "Control enriched", "Recovery from D2 enriched")
+D2_recov$Genus <-str_replace(string = D2_recov$Genus, pattern = "g__", replacement = " ")
+D2_recov$Genus_Species <- paste0(D2_recov$Genus, D2_recov$Species)
+D2_recov$Genus_Species <-str_replace(string = D2_recov$Genus_Species, pattern = "NA", replacement = " ")
+
+# Plot
+D2_recov <- enriched <- ggplot(D2_recov) +
+  aes(x = effect, y = Genus_Species, color = sign_effect, fill= sign_effect) +
+  geom_boxplot() +
+  geom_vline(xintercept = 0) +  
+  scale_color_manual(values = c("Recovery from D2 enriched" = "#ECE320", "Control enriched" = "#6DA0F8")) +
+   scale_fill_manual(values = c("Recovery from D2 enriched" = "#ECE320", "Control enriched" = "#6DA0F8")) +
+   theme_minimal(base_size = 16)+
+  theme(axis.text.y = element_text(face="italic"), axis.title.y = element_blank(), legend.title = element_blank())
+
+```
+
+##From D3
+```{r}
+load("/DRYER_greenhouse/results/Metabarlist_serre_ITS_AMVG42-230505_clean.Rdata")
+rownames(AMVG42_230505_ITS_clean$samples) <- AMVG42_230505_ITS_clean$samples$sample_id
+leaf_phy <- AMVG42_230505_ITS_clean
+leaf_phy$samples$Name <- NA
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Epe.fal"] <- "E. falcata"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Iry.hos"] <- "I. hostmannii"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Jac.cop"] <- "J. copaia"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Pte.off"] <- "P. officinalis"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Sym.off"] <- "S. globulifera"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Tac.mel"] <- "T. melinonii"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Vir.sur"] <- "V. surinamensis"
+
+fun_drought <- subset_metabarlist(leaf_phy, table = "samples", indices = leaf_phy$samples$Time %in% c("t101"))
+
+aldex_drought <- t(fun_drought$reads)
+treatment_labels <- fun_drought$samples$Treatment
+existing_colnames <- colnames(aldex_drought)
+new_colnames <- paste(treatment_labels, sep = "_")
+colnames(aldex_drought) <- new_colnames
+
+table(grepl('C0', colnames(aldex_drought)))
+table(grepl('D3', colnames(aldex_drought)))
+
+conds<- c(rep("C0", 15), rep("D3", 19))
+
+# Sample column names from your dataframe
+colnames <- colnames(aldex_drought)
+
+# Extract labels (C0, D1, D2, D3) from the column names
+labels <- gsub(".*_", "", colnames)
+
+# Define the order of labels
+label_order <- c("C0", "D3")
+ordered_colnames <- colnames[order(match(labels, label_order))]
+aldex_drought_ordered <- aldex_drought[, ordered_colnames]
+
+
+f = aldex_drought_ordered
+
+f <- codaSeq.filter(t(f), min.reads=10000, min.prop=0.001, min.occurrence = 0.1, samples.by.row=FALSE)
+
+table(grepl('C0', rownames(f)))
+table(grepl('D3', rownames(f)))
+#analysis t-test
+conds<- c(rep("C0", 15), rep("D3", 19))
+label_order <- c("C0", "D3")
+
+f.x<- aldex(t(f), mc.samples = 1000, denom="all", verbose = TRUE, conds,  test="t", effect=TRUE, paired.test = F)
+
+rownames(f.x) -> f.x$id
+
+f.x2<- left_join(f.x, leaf_phy$motus) 
+
+Recovery_D3 <-f.x2[,c(1:11,16:22)] 
+
+Recovery_D3 <- Recovery_D3  %>% filter(we.eBH < 0.05) 
+Recovery_D3 <- Recovery_D3%>% filter(abs(effect) > 1 )
+
+write.csv(Recovery_D3,"Recovery_D3.csv")
+
+Recovery_D3$sign_effect <- ifelse(Recovery_D3$effect < 0, "Control enriched", "Recvovery from D3 enriched")
+Recovery_D3$Family_Genus <- paste0(Recovery_D3$Family, Recovery_D3$Genus)
+
+Recovery_D3$Genus <-str_replace(string = Recovery_D3$Genus, pattern = "g__", replacement = " ")
+Recovery_D3$Genus_Species <- paste0(Recovery_D3$Genus, Recovery_D3$Species)
+Recovery_D3$Genus_Species <-str_replace(string = Recovery_D3$Genus_Species, pattern = "NA", replacement = " ")
+
+# Plot
+D3_recov_enriched <- ggplot(Recovery_D3) +
+  aes(x = effect, y = Genus_Species, color = sign_effect, fill= sign_effect) +
+  geom_boxplot() +
+  geom_vline(xintercept = 0) +
+  scale_color_manual(values = c("Recvovery from D3 enriched" = "#DF5220", "Control enriched" = "#6DA0F8")) +
+  scale_fill_manual(values = c("Recvovery from D3 enriched" = "#DF5220", "Control enriched" = "#6DA0F8")) +
+  theme_minimal(base_size = 16) +
+  theme(axis.text.y = element_text(face="italic"), axis.title.y = element_blank(), legend.title = element_blank())
+  
+D3_recov_enriched 
+```
+
+```{r}
+fungi_drought <- ggarrange(D1_enriched, D2_enriched, D3_enriched, ncol=1, nrow=3, labels = c("B.", "D.", "F."), heights = c(0.5,0.6,1))
+fungi_drought
+```
+
+#BACTERIA
+
+##D1
+```{r}
+load("/DRYER_greenhouse/results/Metabarlist_serre_16S_AMVG51-230505_clean.Rdata")
+rownames(AMVG51_230505_16S_clean$samples) <- AMVG51_230505_16S_clean$samples$sample_id
+leaf <- AMVG51_230505_16S_clean
+
+# Aggregate the metabarlist at the class level
+leaf_phy <-  aggregate_motus(leaf, groups= leaf$motus$Order)
+#leaf_phy <-  aggregate_motus(leaf, groups= leaf$motus$Family)
+#leaf_phy <-  aggregate_motus(leaf, groups= leaf$motus$Genus)
+
+leaf_phy$samples$Name <- NA
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Epe.fal"] <- "E. falcata"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Iry.hos"] <- "I. hostmannii"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Jac.cop"] <- "J. copaia"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Pte.off"] <- "P. officinalis"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Sym.off"] <- "S. globulifera"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Tac.mel"] <- "T. melinonii"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Vir.sur"] <- "V. surinamensis"
+
+
+bac_recovery_D1 <- subset_metabarlist(leaf_phy, table = "samples", indices = leaf_phy$samples$Time %in% c("t21", "t51"))
+
+bac_recovery_D1$samples <- bac_recovery_D1$samples %>%
+   mutate(Period = case_when(
+      Treatment == "D1" &  Time == "t21" ~ "Drought D1",
+      Treatment == "D1" &  Time == "t51" ~ "Recovery D1",
+      TRUE                      ~ "Control"
+    )
+  )
+
+#install
+#install.packages("devtools")
+#devtools::install_github("ggloor/ALDEx_bioc")
+library(devtools)
+library(ALDEx2)
+#install_github("jokergoo/ComplexHeatmap")
+
+
+aldex_drought <- t(bac_recovery_D1$reads)
+treatment_labels <- bac_recovery_D1$samples$Period
+existing_colnames <- colnames(aldex_drought)
+new_colnames <- paste(existing_colnames, treatment_labels, sep = "_")
+colnames(aldex_drought) <- new_colnames
+
+table(grepl('Control', colnames(aldex_drought)))
+table(grepl('Drought D1', colnames(aldex_drought)))
+table(grepl('Recovery D1', colnames(aldex_drought)))
+
+#analysis kruskal wallis all levels
+conds<- c(rep("Control", 35), rep("Drought D1", 34), rep("Recovery D1", 30))
+
+# Sample column names from your dataframe
+colnames <- colnames(aldex_drought)
+
+# Extract labels (C0, D1, D2, D3) from the column names
+labels <- gsub(".*_", "", colnames)
+
+# Define the order of labels
+label_order <- c("Control", "Drought D1", "Recovery D1")
+
+# Use the order of labels to reorder the columns
+ordered_colnames <- colnames[order(match(labels, label_order))]
+
+# Reorder the columns in the aldex_drought dataframe
+aldex_drought_ordered <- aldex_drought[, ordered_colnames]
+
+aldex_analysis_bac_drought<- aldex.clr(aldex_drought_ordered, mc.samples = 1000, denom="all", verbose = TRUE, conds)
+
+differentials <- aldex.kw(aldex_analysis_bac_drought,  useMC = F, verbose = T)
+
+#write.csv(differentials, file = "differential.aldex.bacgi.genus.csv")
+#write.csv(differentials, file = "differential.aldex.bacgi.family.csv")
+write.csv(differentials, file = "differential.aldex.bac.order.recoveryD1.csv")
+
+differentials <- read.csv("differential.aldex.bac.order.recoveryD1.csv")  
+
+differentials$X[91] <- "NA"
+rownames(differentials) <- differentials$X
+differentials<- differentials %>%
+  dplyr::select(-X)
+
+aldex <- differentials %>% rownames_to_column(
+  var = "Feature.ID")%>% filter(kw.eBH < 0.1) # Benjamini-Hochberg corrected p-values <0.05
+
+order_aldex <- aldex %>% rename(
+    "Order"=Feature.ID)%>%dplyr::mutate_at(c(1),~str_extract(., "[^;]+$"))%>% arrange(
+      `Order`)%>% column_to_rownames(var = "Order") %>% 
+  mutate_at(c("kw.eBH"), funs(p.value = case_when(
+    . <= 0.001 ~ "<0.001",
+    . >  0.001 & .  <= 0.01 ~ "<0.01",
+    . >  0.01 & .  < 0.05 ~ "<0.05",
+    . >=  0.05 ~ ">0.05"))) %>% rownames_to_column(
+      var = "ids") %>%  arrange(
+        ids) %>% column_to_rownames(var = "ids")
+
+bacteria_drought_order <- rownames(order_aldex)
+```
+
+##relative abundance
+
+
+```{r}
+
+load("/DRYER_greenhouse/results/Metabarlist_serre_16S_AMVG51-230505_clean.Rdata")
+rownames(AMVG51_230505_16S_clean$samples) <- AMVG51_230505_16S_clean$samples$sample_id
+leaf <- AMVG51_230505_16S_clean
+
+# Aggregate the metabarlist at the class level
+#leaf_order <-  aggregate_motus(leaf, groups= leaf$motus$Phylum_Class_Order)
+leaf_order <-  aggregate_motus(leaf, groups= leaf$motus$Order)
+
+leaf_order$samples$Name <- NA
+leaf_order$samples$Name[leaf_order$samples$Species == "Epe.fal"] <- "E. falcata"
+leaf_order$samples$Name[leaf_order$samples$Species == "Iry.hos"] <- "I. hostmannii"
+leaf_order$samples$Name[leaf_order$samples$Species == "Jac.cop"] <- "J. copaia"
+leaf_order$samples$Name[leaf_order$samples$Species == "Pte.off"] <- "P. officinalis"
+leaf_order$samples$Name[leaf_order$samples$Species == "Sym.off"] <- "S. globulifera"
+leaf_order$samples$Name[leaf_order$samples$Species == "Tac.mel"] <- "T. melinonii"
+leaf_order$samples$Name[leaf_order$samples$Species == "Vir.sur"] <- "V. surinamensis"
+
+bac <- subset_metabarlist(leaf_order, table = "motus", indices = leaf_order$motus$Order %in% bacteria_drought_order)
+
+bac <- subset_metabarlist(bac, table = "samples", indices = leaf_phy$samples$Time %in% c("t21", "t51"))
+
+bac$samples <- bac$samples %>%
+   mutate(Period = case_when(
+      Treatment == "D1" &  Time == "t21" ~ "Drought D1",
+      Treatment == "D1" &  Time == "t51" ~ "Recovery D1",
+      TRUE                      ~ "Control"
+    )
+  )
+
+bac$samples <- bac$samples %>% 
+  mutate(Species_Treatment = paste0(bac$samples$Name, "_", bac$samples$Period))
+
+tmp <-  melt(aggregate( bac$reads, by = list(bac$samples$Species_Treatment), sum))
+             
+colnames(tmp) <- c("Treatment", "Order", "Value")
+Order_abundance <- aggregate(Value ~ Order, data = tmp, sum)
+options(scipen = 999)
+total_sum <- sum(Order_abundance$Value)
+Order_proportions <- Order_abundance %>% mutate(Proportion = Value / total_sum *100)
+Order_proportions
+top_Order <- head(Order_abundance$Order[order(Order_abundance$Value, decreasing = TRUE)],15)
+tmp <- tmp %>%
+  mutate(Order2 = ifelse(Order %in% top_Order, paste0(Order), "Others"))
+sample_abundance <- tmp %>%
+  group_by(Treatment) %>%
+  summarize(TotalValue = sum(Value))
+tmp <- merge(tmp, sample_abundance, by = "Treatment")
+tmp$RelativeAbundance <- tmp$Value / tmp$TotalValue
+tmp <- tmp %>%
+  group_by(Treatment) %>%
+  arrange(RelativeAbundance)
+tmp$Order2[which(tmp$Order2== "NA")] <- "unidentified"
+
+tmp <- tmp %>%
+  separate(col = "Treatment", into = c("Species", "Treatment"), sep = "_")
+
+custom_colors26<- c("#774C22", "#965326", 
+                     "#FFE898", 
+                     "#C1A13E", 
+                     "#5D641E",
+                     "#BAD0C4",
+                     "#7CAED1", "#98D3F1", 
+                       "#EFEFBB", "#FFD34C",
+                     "#dad7cd", "#386641", "#A7C957", "#a3b18a", "#B5E48C", "#432818","#F67E13", "#BC3853", "#F3E762", "#64146E", "#A36A69", "#fc03ec", "#a81513", "#cdb4db", "#6d6875", "#ffcdb2", "#a3b18a") 
+
+#heatmap
+heatmap_plot <- tmp %>%
+  ggplot(aes(x = Species, y = Order2, fill = RelativeAbundance)) +
+  geom_tile() +
+  scale_fill_gradient(low = "yellow", high = "blue") +  # Customize the color scale
+  labs(x = "Treatment", y = "Order2", fill = "Relative Abundance") +  # Customize labels
+  theme_minimal() + # Use a minimal theme, customize as needed
+facet_wrap(~Treatment,  ncol = 4)
+
+heatmap_plot 
+
+#ggsave(filename = "./results/microbio/heatmap_bacteria.jpeg", plot = heatmap_plot, width = 10, height = 6)
+```
+
+##complete heatmap
+```{r}
+
+heatmap_plot <- tmp %>%
+  ggplot(aes(x = Species, y = Order2, fill = RelativeAbundance)) +
+  geom_tile() +
+  scale_fill_gradient(low = "yellow", high = "blue") +  # Customize the color scale
+  labs(x = "Treatment", y = "Order2", fill = "Relative Abundance") +  # Customize labels
+  theme_minimal() + # Use a minimal theme, customize as needed
+facet_wrap(~Treatment, ncol = 4)
+
+heatmap_class<- order_aldex %>%  as.data.frame(
+  ) %>%  rownames_to_column(
+  var = "Order") %>% inner_join(tmp) %>% group_by(
+    Treatment,Species) 
+
+
+heatmap_drought_bacteria <- heatmap_class %>%
+  mutate(Order = paste0(Order, ",", p.value)) %>%
+   ggplot(aes(x = Species, y = Order, fill = RelativeAbundance)) +
+   geom_tile() +
+   scale_fill_gradient(low = "yellow", high = "blue") +  # Customize the color scale
+   theme_minimal(base_size = 15) + # Use a minimal theme, customize as needed
+  theme(legend.position = "bottom")+
+  labs(fill= "Relative abundance")+
+ facet_wrap(~Treatment, ncol = 4)+
+   theme(axis.title.x = element_blank(),axis.title.y = element_blank(), axis.text.x = element_text(angle = 45, hjust = 1))
+
+ggsave(filename = "./results/microbio/heatmap_drought_bacteria_D1.jpeg", plot = heatmap_drought_bacteria, width = 10, height = 5)
+```
+
+##D2
+```{r}
+load("/DRYER_greenhouse/results/Metabarlist_serre_16S_AMVG51-230505_clean.Rdata")
+rownames(AMVG51_230505_16S_clean$samples) <- AMVG51_230505_16S_clean$samples$sample_id
+leaf <- AMVG51_230505_16S_clean
+
+# Aggregate the metabarlist at the class level
+#leaf_phy <-  aggregate_motus(leaf, groups= leaf$motus$Order)
+#leaf_phy <-  aggregate_motus(leaf, groups= leaf$motus$Family)
+leaf_phy <-  aggregate_motus(leaf, groups= leaf$motus$Genus)
+
+leaf_phy$samples$Name <- NA
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Epe.fal"] <- "E. falcata"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Iry.hos"] <- "I. hostmannii"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Jac.cop"] <- "J. copaia"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Pte.off"] <- "P. officinalis"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Sym.off"] <- "S. globulifera"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Tac.mel"] <- "T. melinonii"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Vir.sur"] <- "V. surinamensis"
+
+
+bac_recovery_D2 <- subset_metabarlist(leaf_phy, table = "samples", indices = leaf_phy$samples$Time %in% c("t27", "t57"))
+
+bac_recovery_D2$samples <- bac_recovery_D2$samples %>%
+   mutate(Period = case_when(
+      Treatment == "D2" &  Time == "t27" ~ "Drought D2",
+      Treatment == "D2" &  Time == "t57" ~ "Recovery D2",
+      TRUE                      ~ "Control"
+    )
+  )
+
+#install
+#install.packages("devtools")
+#devtools::install_github("ggloor/ALDEx_bioc")
+library(devtools)
+library(ALDEx2)
+#install_github("jokergoo/ComplexHeatmap")
+
+
+aldex_drought <- t(bac_recovery_D2$reads)
+treatment_labels <- bac_recovery_D2$samples$Period
+existing_colnames <- colnames(aldex_drought)
+new_colnames <- paste(existing_colnames, treatment_labels, sep = "_")
+colnames(aldex_drought) <- new_colnames
+
+table(grepl('Control', colnames(aldex_drought)))
+table(grepl('Drought D2', colnames(aldex_drought)))
+table(grepl('Recovery D2', colnames(aldex_drought)))
+
+#analysis kruskal wallis all levels
+conds<- c(rep("Control", 39), rep("Drought D2", 32), rep("Recovery D2", 34))
+
+# Sample column names from your dataframe
+colnames <- colnames(aldex_drought)
+
+# Extract labels (C0, D1, D2, D3) from the column names
+labels <- gsub(".*_", "", colnames)
+
+# Define the order of labels
+label_order <- c("Control", "Drought D2", "Recovery D2")
+
+# Use the order of labels to reorder the columns
+ordered_colnames <- colnames[order(match(labels, label_order))]
+
+# Reorder the columns in the aldex_drought dataframe
+aldex_drought_ordered <- aldex_drought[, ordered_colnames]
+
+aldex_analysis_bac_drought<- aldex.clr(aldex_drought_ordered, mc.samples = 1000, denom="all", verbose = TRUE, conds)
+
+differentials <- aldex.kw(aldex_analysis_bac_drought,  useMC = F, verbose = T)
+
+#write.csv(differentials, file = "differential.aldex.bacgi.genus.csv")
+#write.csv(differentials, file = "differential.aldex.bacgi.family.csv")
+write.csv(differentials, file = "differential.aldex.bac.genus.recoveryD2.csv")
+
+
+```
+
+##D3
+```{r}
+load("/DRYER_greenhouse/results/Metabarlist_serre_16S_AMVG51-230505_clean.Rdata")
+rownames(AMVG51_230505_16S_clean$samples) <- AMVG51_230505_16S_clean$samples$sample_id
+leaf <- AMVG51_230505_16S_clean
+
+
+# Aggregate the metabarlist at the class level
+#leaf_phy <-  aggregate_motus(leaf, groups= leaf$motus$Order)
+#leaf_phy <-  aggregate_motus(leaf, groups= leaf$motus$Family)
+leaf_phy <-  aggregate_motus(leaf, groups= leaf$motus$Genus)
+
+leaf_phy$samples$Name <- NA
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Epe.fal"] <- "E. falcata"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Iry.hos"] <- "I. hostmannii"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Jac.cop"] <- "J. copaia"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Pte.off"] <- "P. officinalis"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Sym.off"] <- "S. globulifera"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Tac.mel"] <- "T. melinonii"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Vir.sur"] <- "V. surinamensis"
+
+
+bac_recovery_D3 <- subset_metabarlist(leaf_phy, table = "samples", indices = leaf_phy$samples$Time %in% c("t71", "t101"))
+
+bac_recovery_D3$samples <- bac_recovery_D3$samples %>%
+   mutate(Period = case_when(
+      Treatment == "D3" &  Time == "t71" ~ "Drought D3",
+      Treatment == "D3" &  Time == "t101" ~ "Recovery D3",
+      TRUE                      ~ "Control"
+    )
+  )
+
+#install
+#install.packages("devtools")
+#devtools::install_github("ggloor/ALDEx_bioc")
+library(devtools)
+library(ALDEx2)
+#install_github("jokergoo/ComplexHeatmap")
+
+
+aldex_drought <- t(bac_recovery_D3$reads)
+treatment_labels <- bac_recovery_D3$samples$Period
+existing_colnames <- colnames(aldex_drought)
+new_colnames <- paste(existing_colnames, treatment_labels, sep = "_")
+colnames(aldex_drought) <- new_colnames
+
+table(grepl('Control', colnames(aldex_drought)))
+table(grepl('Drought D3', colnames(aldex_drought)))
+table(grepl('Recovery D3', colnames(aldex_drought)))
+
+#analysis kruskal wallis all levels
+conds<- c(rep("Control", 28), rep("Drought D3", 20), rep("Recovery D3", 24))
+
+# Sample column names from your dataframe
+colnames <- colnames(aldex_drought)
+
+# Extract labels (C0, D1, D2, D3) from the column names
+labels <- gsub(".*_", "", colnames)
+
+# Define the order of labels
+label_order <- c("Control", "Drought D3", "Recovery D3")
+
+# Use the order of labels to reorder the columns
+ordered_colnames <- colnames[order(match(labels, label_order))]
+
+# Reorder the columns in the aldex_drought dataframe
+aldex_drought_ordered <- aldex_drought[, ordered_colnames]
+
+aldex_analysis_bac_drought<- aldex.clr(aldex_drought_ordered, mc.samples = 1000, denom="all", verbose = TRUE, conds)
+
+differentials <- aldex.kw(aldex_analysis_bac_drought,  useMC = F, verbose = T)
+
+
+#write.csv(differentials, file = "differential.aldex.bac.family.recoveryD3.csv")
+write.csv(differentials, file = "differential.aldex.bac.genus.recoveryD3.csv")
+
+differentials <- read.csv("differential.aldex.bac.genus.recoveryD3.csv")
+differentials$X[396] <- "NA"
+rownames(differentials) <- differentials$X
+differentials<- differentials %>%
+  dplyr::select(-X)
+
+aldex <- differentials %>% rownames_to_column(
+  var = "Feature.ID")%>% filter(kw.eBH < 0.1) # Benjamini-Hochberg corrected p-values <0.05
+
+order_aldex <- aldex %>% rename(
+    "Order"=Feature.ID)%>%dplyr::mutate_at(c(1),~str_extract(., "[^;]+$"))%>% arrange(
+      `Order`)%>% column_to_rownames(var = "Order") %>% 
+  mutate_at(c("kw.eBH"), funs(p.value = case_when(
+    . <= 0.001 ~ "<0.001",
+    . >  0.001 & .  <= 0.01 ~ "<0.01",
+    . >  0.01 & .  < 0.05 ~ "<0.05",
+    . >=  0.05 ~ ">0.05"))) %>% rownames_to_column(
+      var = "ids") %>%  arrange(
+        ids) %>% column_to_rownames(var = "ids")
+
+bacteria_drought_Genus <- rownames(order_aldex)
+```
+
+##relative abundance
+
+
+```{r}
+
+load("/DRYER_greenhouse/results/Metabarlist_serre_16S_AMVG51-230505_clean.Rdata")
+rownames(AMVG51_230505_16S_clean$samples) <- AMVG51_230505_16S_clean$samples$sample_id
+leaf <- AMVG51_230505_16S_clean
+
+# Aggregate the metabarlist at the class level
+leaf_Genus <-  aggregate_motus(leaf, groups= leaf$motus$Genus)
+
+leaf_Genus$samples$Name <- NA
+leaf_Genus$samples$Name[leaf_Genus$samples$Species == "Epe.fal"] <- "E. falcata"
+leaf_Genus$samples$Name[leaf_Genus$samples$Species == "Iry.hos"] <- "I. hostmannii"
+leaf_Genus$samples$Name[leaf_Genus$samples$Species == "Jac.cop"] <- "J. copaia"
+leaf_Genus$samples$Name[leaf_Genus$samples$Species == "Pte.off"] <- "P. officinalis"
+leaf_Genus$samples$Name[leaf_Genus$samples$Species == "Sym.off"] <- "S. globulifera"
+leaf_Genus$samples$Name[leaf_Genus$samples$Species == "Tac.mel"] <- "T. melinonii"
+leaf_Genus$samples$Name[leaf_Genus$samples$Species == "Vir.sur"] <- "V. surinamensis"
+
+bac <- subset_metabarlist(leaf_Genus, table = "samples", indices = leaf_Genus$samples$Time %in% c("t71", "t101"))
+
+bac <- subset_metabarlist(bac, table = "motus", indices = bac$motus$Genus %in% bacteria_drought_Genus)
+
+bac$samples <- bac$samples %>%
+   mutate(Period = case_when(
+      Treatment == "D3" &  Time == "t71" ~ "Drought D3",
+      Treatment == "D3" &  Time == "t101" ~ "Recovery D3",
+      TRUE                      ~ "Control"
+    )
+  )
+
+bac$samples <- bac$samples %>% 
+  mutate(Species_Treatment = paste0(bac$samples$Name, "_", bac$samples$Period))
+
+tmp <-  melt(aggregate( bac$reads, by = list(bac$samples$Species_Treatment), sum))
+             
+colnames(tmp) <- c("Treatment", "Genus", "Value")
+Genus_abundance <- aggregate(Value ~ Genus, data = tmp, sum)
+options(scipen = 999)
+total_sum <- sum(Genus_abundance$Value)
+Genus_proportions <- Genus_abundance %>% mutate(Proportion = Value / total_sum *100)
+Genus_proportions
+top_Genus <- head(Genus_abundance$Genus[order(Genus_abundance$Value, decreasing = TRUE)],15)
+tmp <- tmp %>%
+  mutate(Genus2 = ifelse(Genus %in% top_Genus, paste0(Genus), "Others"))
+sample_abundance <- tmp %>%
+  group_by(Treatment) %>%
+  summarize(TotalValue = sum(Value))
+tmp <- merge(tmp, sample_abundance, by = "Treatment")
+tmp$RelativeAbundance <- tmp$Value / tmp$TotalValue
+tmp <- tmp %>%
+  group_by(Treatment) %>%
+  arrange(RelativeAbundance)
+tmp$Genus2[which(tmp$Genus2== "NA")] <- "unidentified"
+
+tmp <- tmp %>%
+  separate(col = "Treatment", into = c("Species", "Treatment"), sep = "_")
+
+custom_colors26<- c("#774C22", "#965326", 
+                     "#FFE898", 
+                     "#C1A13E", 
+                     "#5D641E",
+                     "#BAD0C4",
+                     "#7CAED1", "#98D3F1", 
+                       "#EFEFBB", "#FFD34C",
+                     "#dad7cd", "#386641", "#A7C957", "#a3b18a", "#B5E48C", "#432818","#F67E13", "#BC3853", "#F3E762", "#64146E", "#A36A69", "#fc03ec", "#a81513", "#cdb4db", "#6d6875", "#ffcdb2", "#a3b18a") 
+
+#heatmap
+heatmap_plot <- tmp %>%
+  ggplot(aes(x = Species, y = Genus2, fill = RelativeAbundance)) +
+  geom_tile() +
+  scale_fill_gradient(low = "yellow", high = "blue") +  # Customize the color scale
+  labs(x = "Treatment", y = "Genus2", fill = "Relative Abundance") +  # Customize labels
+  theme_minimal() + # Use a minimal theme, customize as needed
+facet_wrap(~Treatment,  ncol = 4)
+
+heatmap_plot 
+
+#ggsave(filename = "./results/microbio/heatmap_bacteria.jpeg", plot = heatmap_plot, width = 10, height = 6)
+```
+
+##complete heatmap
+```{r}
+
+heatmap_plot <- tmp %>%
+  ggplot(aes(x = Species, y =Genus2, fill = RelativeAbundance)) +
+  geom_tile() +
+  scale_fill_gradient(low = "yellow", high = "blue") +  # Customize the color scale
+  labs(x = "Treatment", y = "Genus2", fill = "Relative Abundance") +  # Customize labels
+  theme_minimal() + # Use a minimal theme, customize as needed
+facet_wrap(~Treatment, ncol = 4)
+
+heatmap_class<- order_aldex %>%  as.data.frame(
+  ) %>%  rownames_to_column(
+  var = "Genus") %>% inner_join(tmp) %>% group_by(
+    Treatment,Species) 
+
+
+heatmap_drought_bacteria <- heatmap_class %>%
+  mutate(Genus = paste0(Genus, ",", p.value)) %>%
+   ggplot(aes(x = Species, y = Genus, fill = RelativeAbundance)) +
+   geom_tile() +
+   scale_fill_gradient(low = "yellow", high = "blue") +  # Customize the color scale
+   theme_minimal(base_size = 15) + # Use a minimal theme, customize as needed
+  theme(legend.position = "bottom")+
+  labs(fill= "Relative abundance")+
+ facet_wrap(~Treatment, ncol = 4)+
+   theme(axis.title.x = element_blank(),axis.title.y = element_blank(), axis.text.x = element_text(angle = 45, hjust = 1))
+
+ggsave(filename = "./results/microbio/heatmap_drought_bacteria_D3.jpeg", plot = heatmap_drought_bacteria, width = 10, height = 5)
+```

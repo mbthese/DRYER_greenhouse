@@ -1,0 +1,311 @@
+---
+title: "resistance"
+author: "Marion Boisseaux"
+date: "2023-08-08"
+output: html_document
+---
+#data
+```{r}
+#resistance microbio
+resistance_kingdom <- read_csv("resistance_kingdom.csv") %>% dplyr::select(-...1, -Species) %>%rename(Species =facet_label)
+names(resistance_kingdom)
+
+resistance_bac <- resistance_kingdom %>% filter(Kingdom =="bacteria") %>% rename(RS_bac = Resistance)
+
+resistance_bac <- resistance_bac %>% add_row() #add row for eperua
+
+resistance_bac$Species[14] <- "E. falcata"
+resistance_bac$Treatment[14] <- "D3"
+resistance_bac$RS_bac[14] <- NA
+resistance_bac$Kingdom[14] <- "bacteria"
+
+resistance_bac <- resistance_bac %>% dplyr::select(-Kingdom) %>% unite("z", c("Species","Treatment"))
+
+resistance_fun <- resistance_kingdom %>% filter(Kingdom == "fungi") %>% rename(RS_fun = Resistance) %>% dplyr::select(-Kingdom) %>% unite("z", c("Species","Treatment"))
+
+#resistance trait
+resistance_trait <- read_csv("resistance_trait.csv") %>% dplyr::select(-...1, -Species) %>%rename(Species =facet_label)
+
+resistance_Asat <- resistance_trait %>% filter(Trait == "Asat") %>% rename(RS_Asat = Resistance) %>% dplyr::select(-Trait) %>% unite("z", c("Species","Treatment"))
+resistance_Diam <- resistance_trait %>% filter(Trait == "Diameter") %>% rename(RS_Diam = Resistance) %>% dplyr::select(-Trait) %>% unite("z", c("Species","Treatment"))
+
+resistance_kingdom <- left_join(resistance_bac, resistance_fun)
+resistance_trait <- left_join(resistance_Asat, resistance_Diam)
+
+resistance <- left_join(resistance_kingdom, resistance_trait) %>% separate(z, c(c("Species","Treatment")), sep = "_" )
+```
+
+
+#correlation matrix
+```{r}
+traits <- resistance %>% 
+  dplyr::select(-Species, -Treatment)
+
+#to add significance
+testRes = cor.mtest(traits, conf.level = 0.95)
+
+#image output, have to run until last live dev.off() for it to work.
+png(height=500, width=500, file="mycorr.png", type = "cairo")
+
+#create correlation matrix
+cor_matrix <- traits %>%
+  na.omit() %>%
+  cor(method = "spearman")
+
+#correlation plot with no rows and column labels and without colors in the diagonal
+corrplot(cor_matrix, p.mat = testRes$p, method = 'circle',  #addCoef.col ='black', insig='blank',
+         sig.level = 0.10, addrect = 2, diag = FALSE, tl.pos = FALSE)
+
+# Add labels to the diagonal
+text(rev(1:nrow(cor_matrix)), 1:nrow(cor_matrix), rev(colnames(cor_matrix)), 
+     cex = 1.5, pos = 4, offset = -1.5, col= "red", ifelse(is.na(diag(cor_matrix)), NA, 1))
+
+dev.off()
+```
+
+#table
+```{r}
+traits <- resistance %>% 
+  dplyr::select(-Species, -Treatment)
+
+#to add significance
+testRes = cor.mtest(traits, conf.level = 0.95)
+
+#image output, have to run until last live dev.off() for it to work.
+png(height=500, width=500, file="mycorr.png", type = "cairo")
+
+#create correlation matrix
+cor_matrix <- traits %>%
+  na.omit() %>%
+  cor(method = "spearman")
+
+#correlation plot with no rows and column labels and without colors in the diagonal
+corrplot(cor_matrix, p.mat = testRes$p, method = 'circle',  #addCoef.col ='black', insig='blank',
+         sig.level = 0.10, addrect = 2, diag = FALSE, tl.pos = FALSE)
+
+# Add labels to the diagonal
+text(rev(1:nrow(cor_matrix)), 1:nrow(cor_matrix), rev(colnames(cor_matrix)), 
+     cex = 1.5, pos = 4, offset = -1.5, col= "red", ifelse(is.na(diag(cor_matrix)), NA, 1))
+
+dev.off()
+
+#significance
+library(Hmisc)
+res <- rcorr(as.matrix(traits), type = "spearman")
+res
+# Extract the correlation coefficients
+
+library(kableExtra)
+
+res$r %>%
+  kbl(caption ="", digits =2)  %>%
+  add_header_above(c("<span style='font-size: 20px; font-weight: bold;'>A. Pairwise table of the correlation coefficients</span>" = 5), escape = FALSE) %>%
+  kable_classic(full_width = F, html_font = "Cambria")  %>%
+  save_kable("corr_coef.png")
+  
+img <- image_read("corr_coef.png")
+img_resized <- image_scale(img, "800x600")
+
+# Save the resized image
+image_write(img_resized, "corr_coef_resized.png")
+
+
+# Extract p-values associated to the correlation coefficients
+res$P%>%
+  kbl(caption ="", digits =3)  %>%
+  add_header_above(c("<span style='font-size: 20px; font-weight: bold;'>B. Pairwise table of the associated p-values</span>" = 5), escape = FALSE) %>%
+  kable_classic(full_width = F, html_font = "Cambria") %>%
+  save_kable("corr_pvalue.png")
+
+img <- image_read("corr_pvalue.png")
+img_resized <- image_scale(img, "800x600")
+
+# Save the resized image
+image_write(img_resized, "corr_pvalue_resized.png")
+
+```
+
+
+#Other way to do it
+
+```{r}
+#traits
+load("E:/DRYER_greenhouse/resources/ecophysio/Global_DRYER.RData")
+trait <- Global_DRYER$trait_data %>% filter(Time != "t0")
+
+#bacteria
+bacteria_alpha <- read_csv("resources/AMVG51_230505_16S_clean_alpha.csv") %>% rename(UniqueCode = code) %>% dplyr::select(UniqueCode, Shannon_bac)
+bacteria_beta <- read_csv("resources/beta_bac.csv")
+
+bacteria_beta <- bacteria_beta %>%  group_by(indv_b_time, indv_b_treatment, indv_b_species) %>%
+    summarise(beta_bac_mean = mean(value, na.rm = TRUE)) %>%
+  rename(Species = indv_b_species,
+         Time = indv_b_time,
+         Treatment = indv_b_treatment)
+
+#fungi
+fungi_alpha <- read_csv("resources/AMVG42_230505_ITS_clean_alpha.csv") %>% rename(UniqueCode = code) %>% dplyr::select(UniqueCode, Shannon_fun)
+fungi_beta <- read_csv("resources/beta_fun.csv")
+
+fungi_beta <- fungi_beta %>%  group_by(indv_b_time, indv_b_treatment, indv_b_species) %>%
+    summarise(beta_fun_mean = mean(value, na.rm = TRUE)) %>%
+  rename(Species = indv_b_species,
+         Time = indv_b_time,
+         Treatment = indv_b_treatment)
+```
+
+merge datasets
+
+```{r}
+data <- left_join(trait, bacteria_alpha)
+
+data <- left_join(data, fungi_alpha)
+
+summarized_data <- data %>%
+  dplyr::select(-UniqueCode) %>%
+  group_by(Time, Treatment, Species) %>%
+    summarise(
+    RWC_mean = mean(RWC, na.rm = TRUE),
+    LT_mean = mean(LT, na.rm = TRUE),
+    RootShoot_mean = mean(RootShoot, na.rm = TRUE),
+    Chloro_mean = mean(Chloro, na.rm = TRUE),
+    gs_mean = mean(gs, na.rm = TRUE),
+    FvFm_mean = mean(FvFm, na.rm = TRUE),
+    Asat_mean = mean(Asat, na.rm = TRUE),
+    E_mean = mean(E, na.rm = TRUE),
+    WUE_mean = mean(WUE, na.rm = TRUE),
+    Pmidday_mean = mean(Pmidday, na.rm = TRUE),
+    TotalLeafSurface_mean = mean(TotalLeafSurface, na.rm = TRUE),
+    LA_rwc_mean = mean(LA_rwc, na.rm = TRUE),
+    SLA_mean = mean(SLA, na.rm = TRUE),
+    Shannon_bac_mean = mean(Shannon_bac, na.rm = TRUE),
+    Shannon_fun_mean = mean(Shannon_fun, na.rm = TRUE)
+  )
+
+summarized_data <- as.tibble(summarized_data)
+
+a <- left_join(summarized_data, fungi_beta)
+b <- left_join(a, bacteria_beta)
+
+
+#correlation matrix
+traits_drought <- b %>% filter(Time %in% c("t21", "t27", "t71")) %>% filter(Treatment != "C0") %>% dplyr::select(-Species, -Treatment, -Time)
+  
+
+#to add significance
+testRes = cor.mtest(traits_drought, conf.level = 0.95, method= "kendall")
+testRes2 <- testRes$p
+testRes2 <- testRes2[-c(1:13),]
+
+#image output, have to run until last live dev.off() for it to work.
+# png(height=500, width=500, file="mycorr_drought.png", type = "cairo")
+
+#create correlation matrix
+cor_matrix_drought <- traits_drought %>%
+  na.omit() %>%
+  cor(method = "kendall")
+
+cor_matrix_drought <- cor_matrix_drought[-c(1:13),]
+
+library(corrplot)
+#correlation plot with no rows and column labels and without colors in the diagonal
+c <- corrplot(cor_matrix_drought, p.mat = testRes2, method = 'circle',  addCoef.col ='black', insig='blank',
+         sig.level = 0.10, addrect = 2, diag =FALSE, tl.pos = FALSE)
+
+# Add labels to the diagonal
+text(rev(1:nrow(cor_matrix_drought)), 1:nrow(cor_matrix_drought), rev(colnames(cor_matrix)), 
+     cex = 1.5, pos = 4, offset = -1.5, col= "red", ifelse(is.na(diag(cor_matrix_drought)), NA, 1))
+# 
+# dev.off()
+```
+
+```{r}
+
+#Spearman correlation for drought
+drought <- b %>% filter(Time %in% c("t21", "t27", "t71")) %>% filter(Treatment != "C0") %>% dplyr::select(-Species, -Treatment, -Time)
+  
+
+
+#Spearman correlation for specialist TF
+recovery <-  b %>% filter(Time %in% c("t51", "t57", "t101")) %>% filter(Treatment != "C0") %>% dplyr::select(-Species, -Treatment, -Time) 
+
+#to add significance
+testRes_drought = cor.mtest(drought, conf.level = 0.95, exact= FALSE,  method= "spearman")
+testRes_recovery = cor.mtest(recovery, conf.level = 0.95, exact= FALSE, method= "spearman")
+
+#combine
+# Create a new empty plot with appropriate dimensions
+png(height=700, width=1800, file="combined_corr_plots.png", type = "cairo")
+
+# Divide the plotting area into a 1x2 grid
+par(mfrow=c(1,3))
+
+# Plot drought
+cor_matrix <- drought %>%
+  na.omit() %>%
+  cor(method = "spearman")
+corrplot(cor_matrix, p.mat = testRes_drought$p, method = 'circle',  #addCoef.col ='black', 
+        # insig='blank',
+         sig.level = 0.05, addrect = 2, diag = FALSE, tl.pos = FALSE,  cl.cex = 3)
+title(main = "Drought", adj= 0.2, line = -5, cex.main = 5, col.main= "black")  
+text(rev(1:nrow(cor_matrix)), 1:nrow(cor_matrix), rev(colnames(cor_matrix)), 
+     cex = 2, pos = 4, offset = -1.5, col= "red", ifelse(is.na(diag(cor_matrix)), NA, 1))
+
+# Plot recovery
+cor_matrix_recov <- recovery %>%
+  na.omit() %>%
+  cor(method = "spearman")
+corrplot(cor_matrix_recov, p.mat = testRes_recovery$p, method = 'circle',  #addCoef.col ='black', insig='blank',
+         sig.level = 0.05, addrect = 2, diag = FALSE, tl.pos = FALSE,  cl.cex = 3)
+title(main = "Recovery", adj= 0.2, line = -5, cex.main = 5, col.main= "black")  
+text(rev(1:nrow(cor_matrix_recov)), 1:nrow(cor_matrix_recov), rev(colnames(cor_matrix_recov)), 
+     cex = 2, pos = 4, offset = -1.5, col= "red", ifelse(is.na(diag(cor_matrix_recov)), NA, 1))
+
+def.off()
+
+```
+
+
+#brouillon
+```{r}
+#abundance data frame - bray curtis dissimilarity
+#microbio 16S clean
+load("/DRYER_greenhouse/results/Metabarlist_serre_16S_AMVG51-230505_clean.Rdata")
+microbio_16S <- AMVG51_230505_16S_clean$reads
+
+sample_info <- AMVG51_230505_16S_clean$samples %>% rename(UniqueCode = code) %>% dplyr::select(Species, UniqueCode, Treatment, Time)
+
+rownames(microbio_16S) <- gsub(pattern = "DRYER_greenhouse_Leaf_16S__", replacement = "", x = rownames(microbio_16S))
+microbio_16S <- as.tibble(microbio_16S)
+microbio_16S$UniqueCode <- rownames(microbio_16S)
+
+bacteria_diff <- setdiff(microbio_16S$UniqueCode, trait$UniqueCode)
+ 
+bacteria_diff <- as.tibble(bacteria_diff) %>% rename(UniqueCode = value)
+
+left_join(bacteria_diff, sample_info, by = "UniqueCode")
+
+#remove missing controls
+for (i in bacteria_diff) {
+   trait <- trait %>% filter(UniqueCode != i)
+ }
+
+
+
+dist.abund = vegdist(AMVG51_230505_16S_clean$reads, method = "bray")
+dim(AMVG51_230505_16S_clean$reads) # 276 6167
+AMVG51_230505_16S_clean$samples
+
+# hill <- hill_taxa_parti_pairwise(data_16S$reads,q=1,output="matrix", pairs = "full") 
+# hill.beta  <- hill$TD_beta
+# hill.beta.dist <- as.dist(hill.beta)
+
+#environmental vector - euclidean distance
+dist.RWC = dist(trait$RWC, method = "euclidean")
+dim(trait$RWC)
+
+#matnel test
+abund_temp = mantel(dist.abund, dist.RWC, method = "spearman", permutations = 9999, na.rm = TRUE)
+abund_temp
+```
+

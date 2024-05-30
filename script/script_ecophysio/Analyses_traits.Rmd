@@ -1,0 +1,3528 @@
+---
+title: "Analyses_traits"
+author: "Marion Boisseaux"
+date: "2023-07-21"
+output: html_document
+---
+
+#Library
+```{r}
+library(dplyr)
+library(ggplot2)
+library(ggrepel)
+library(ggfortify)
+library(tidyr)
+library(reshape2)
+library(fmsb) #radar charts
+#radar chart with ggplot2 
+#remotes::install_github("ricardo-bion/ggradar")
+library(ggradar)
+library(tidyverse)
+library(scales)
+library(vegan) #for permanova
+library(devtools) #for install_github
+#install_github("pmartinezarbizu/pairwiseAdonis/pairwiseAdonis")
+library(pairwiseAdonis) #for pairwise comparaison after permanova
+library(kableExtra)
+#devtools::install_github("kassambara/ggpubr", dependencies = FALSE)
+library(ggpubr) #compare means 
+#devtools::install_github("kassambara/rstatix", dependencies = FALSE, force = TRUE)
+library(rstatix)
+library(MASS) #boxcox transformation
+library(FactoMineR)
+library(factoextra)
+```
+
+
+#DRYER greenhouse data
+```{r}
+load("E:/DRYER_greenhouse/resources/ecophysio/Global_DRYER.RData")
+
+```
+
+#Mother tree
+```{r}
+mother <- Global_DRYER$sample_ID
+table <- mother %>% group_by(Species) %>% summarize(Nb_mother_trees = n_distinct(BatchNbr))
+
+table %>%
+mutate(Name=recode(Species, 'Epe.fal'='E. falcata',
+                               'Iry.hos'= 'I. hostmannii',
+                               'Jac.cop' ='J. copaia',
+                               'Pte.off' = 'P. officinalis',
+                               'Sym.off'= 'S. globulifera',
+                               'Tac.mel' = 'T. melinonii',
+                               'Vir.sur' = 'V. surinamensis')) %>%
+  dplyr::select(-Species)%>%
+  rename(Species = Name) %>%
+  relocate(Species, .before = Nb_mother_trees)
+
+table %>%
+  kable(booktabs = TRUE, align = "lc") %>%
+  row_spec(0, bold = TRUE) %>%
+  kable_classic(full_width = F, html_font = "Cambria", font_size= 14) %>%
+  save_kable(file = "Individuals_mothertree.png", zoom = 10)
+```
+
+A tibble: 7 × 2
+  Species     n
+  <chr>   <int>
+1 Epe.fal    20
+2 Iry.hos    13
+3 Jac.cop    20
+4 Pte.off     9
+5 Sym.off    11
+6 Tac.mel    12
+7 Vir.sur    12
+
+#Survival
+```{r}
+survival <- Global_DRYER[[4]] %>%
+  group_by(Species, Treatment, Time) %>%
+  summarize(n= n())
+
+survival <- survival %>% 
+  mutate(Treatment2 = ifelse(Treatment == "C0", "C", "T"),
+         n_initial = ifelse(Time == "t0" & Treatment == "C0", n, 
+                            ifelse(Time == "t0" & Treatment == "D1", n,
+                                   ifelse(Time == "t0" & Treatment == "D2", n, 
+                                          ifelse(Time == "t0" & Treatment == "D3", n, 
+                                                 n[which(Time =="t0")])))))
+
+  
+  
+survival <- survival %>% 
+  mutate(survival_rate = ifelse(Time == "t21" & Treatment2 == "C", ((n+5)/n_initial)*100,#on a detruit 5 plants a t0
+                          ifelse(Time == "t27" & Treatment2 == "C", ((n+8)/n_initial)*100,
+                          ifelse(Time == "t51" & Treatment2 == "C", ((n+11)/n_initial)*100,       
+                          ifelse(Time == "t57" & Treatment2 == "C", ((n+14)/n_initial)*100,
+                          ifelse(Time == "t71" & Treatment2 == "C", ((n+17)/n_initial)*100,
+                          ifelse(Time == "t101" & Treatment2 == "C", ((n+20)/n_initial)*100,
+                                 #now for treatments
+                          ifelse(Time == "t21" & Treatment2 == "T", ((n/n_initial))*100,#on a pas detruit 
+                          ifelse(Time == "t27" & Treatment2 == "T", ((n/n_initial))*100,
+                          ifelse(Time == "t51" & Treatment2 == "T", ((n+5)/n_initial)*100,       
+                          ifelse(Time == "t57" & Treatment2 == "T", ((n+5)/n_initial)*100,
+                          ifelse(Time == "t71" & Treatment2 == "T", ((n/n_initial))*100,
+                          ifelse(Time == "t101" & Treatment2 == "T", ((n/n_initial))*100,
+                          ((n/n_initial))*100)))))))))))))
+
+survival <- as.data.frame(survival)
+
+survival <- survival %>% add_row() #add row for eperua
+
+survival$Species[111] <- "Epe.fal"
+survival$Treatment[111] <- "D3"
+survival$Time[111] <- "t101"
+survival$n[111] <- "0"
+survival$Treatment2[111] <- "T"
+survival$n_initial[111] <- "32"
+survival$survival_rate[111] <- "0"
+
+survival <- survival %>% add_row() #add row for virola
+
+survival$Species[112] <- "Vir.sur"
+survival$Treatment[112] <- "D3"
+survival$Time[112] <- "t101"
+survival$n[112] <- "0"
+survival$Treatment2[112] <- "T"
+survival$n_initial[112] <- "32"
+survival$survival_rate[112] <- "0"
+
+
+survival$Time <- factor(survival$Time, levels = c("t0", "t21", "t27", "t51", "t57", "t71", "t101"))
+survival$survival_rate <- as.numeric(survival$survival_rate)
+survival <- survival %>%
+  mutate(Name=dplyr::recode(Species, 'Epe.fal'='E. falcata',
+                               'Iry.hos'= 'I. hostmannii',
+                               'Jac.cop' ='J. copaia',
+                               'Pte.off' = 'P. officinalis',
+                               'Sym.off'= 'S. globulifera',
+                               'Tac.mel' = 'T. melinonii',
+                               'Vir.sur' = 'V. surinamensis')) %>%
+  dplyr::select(-Species) %>%
+  dplyr::rename("Species" ="Name" )
+
+#survival <- survival %>% filter(Treatment2 != "C") 
+
+survival_plot <- survival %>%
+ggplot() +
+ aes(x = Time, y = survival_rate, colour = Species, shape = Treatment) +
+ geom_jitter(size = 6, alpha =0.7) +
+  scale_shape_manual(values=c(8, 0,2,19))+
+ scale_color_hue(direction = 1) +
+ theme_minimal(base_size = 15) +
+  ylab("Survival (%)")+
+  xlab("Days since the beginning of the experiment")+
+ theme(legend.text = element_text(face = "italic"))+
+ ylim(c(-2,101))
+survival_plot
+
+ggsave(filename = "survival_plot.jpeg", plot = survival_plot, width = 9, height = 6)
+```
+#Species table
+
+```{r}
+library(tidyverse)
+library(kableExtra)
+library(janitor)
+#get authorization
+googlesheets4::gs4_auth(scopes = "https://www.googleapis.com/auth/spreadsheets.readonly" )
+
+species_table <- googlesheets4::read_sheet("https://docs.google.com/spreadsheets/d/1V_26DNJesMbh0pMHQbW4nheHkKNCgnvVlaHWeU3qP4g/edit#gid=0")
+
+options(knitr.kable.NA = '') #replace NA by blank spaces in table
+
+species_table %>%
+  kable(booktabs = TRUE, align = "lllllc") %>%
+  row_spec(0, bold = TRUE) %>%
+  column_spec(2:3, italic = TRUE) %>%
+   column_spec(1, width = "10em") %>% 
+  kable_classic(full_width = F, html_font = "Cambria", font_size= 16) %>%
+  save_kable(file = "species_summary.png", zoom = 10)
+```
+
+#Trait table
+```{r}
+library(tidyverse)
+library(kableExtra)
+library(janitor)
+#get authorization
+googlesheets4::gs4_auth(scopes = "https://www.googleapis.com/auth/spreadsheets.readonly" )
+
+trait_table <- googlesheets4::read_sheet("https://docs.google.com/spreadsheets/d/1-LBjUas_flNGwAlDGFvGoq6GyqQsBiFmmiJyFtQYkMU/edit#gid=5098001", range = "Dryer_GH")
+
+options(knitr.kable.NA = '') #replace NA by blank spaces in table
+
+trait_table %>%
+  unite("Drought resistance strategy", "Drought resistance strategy", "...7", sep = " | ") %>%
+  kable(booktabs = TRUE, align = "lllllc") %>%
+  row_spec(0, bold = TRUE) %>%
+   column_spec(1, width = "10em") %>% 
+  kable_classic(full_width = F, html_font = "Cambria", font_size= 16) %>%
+  save_kable(file = "Trait_summary.png", zoom = 10)
+```
+
+
+
+#Trait variation
+```{r}
+# per traits?
+Data <- Global_DRYER$trait_data 
+DATHDl <- Global_DRYER$HDLW_data
+
+Data <- left_join(Data, DATHDl)
+
+names(Data)
+
+Data <- Data %>%  
+  dplyr::select(-Comment_D, -Comment) %>% dplyr::select(Time, Treatment, Species, 
+       Asat ,gs, E, WUE, RWC, Pmidday , Chloro , FvFm , LT , LA_rwc , SLA, TotalLeafSurface, Height, Diameter, RootShoot) %>% rename(LA = LA_rwc, Total_LA = TotalLeafSurface)
+  
+melted_data <- melt(Data, id.vars = c("Species", "Treatment", "Time"))
+melted_data$Time <- factor(melted_data$Time, levels = c("t0", "t21", "t27", "t51", "t57", "t71", "t101"))
+
+
+# Calculate mean values for each trait at each time point
+mean_values <- melted_data %>%
+  group_by(Species, Treatment, Time, variable) %>%
+  summarise(mean_value = mean(value, na.rm = TRUE),
+            n = n(),
+            sd = sd(value, na.rm = TRUE),
+            se = sd(value,na.rm = TRUE) / sqrt(n))
+
+melted_data %>%
+  #filter(Treatment != "C0") %>%
+  #filter(Time != "t0") %>%
+ggplot(aes(x = Time, y = value, color = Species)) +
+  geom_point() +
+  #geom_path()+
+  facet_wrap(~ variable, scales = "free_y") +
+  labs(title = "Trait values over time",
+       x = "Time",
+       y = "Trait values",
+       color = "Species") +
+  theme_minimal()
+
+
+mean_values <- mean_values %>%
+  mutate(label = ifelse(Species == "Epe.fal", "E. falcata", 
+                        ifelse(Species == "Iry.hos", "I. hostmannii", 
+                               ifelse(Species == "Jac.cop", "J. copaia", 
+                                      ifelse(Species == "Pte.off","P. officinalis",
+                                             ifelse(Species == "Sym.off", "S. globulifera",
+                                                    ifelse(Species == "Tac.mel", "T. melinonii",
+                                                           ifelse(Species == "Vir.sur", "V. surinamensis", NA)))))))) 
+
+mean_values <- mean_values #%>%
+# filter(Treatment != "C0")
+
+mean_values$Time <- gsub("t", "", mean_values$Time)
+mean_values$Time <- as.numeric(mean_values$Time)
+
+#current drought and recvoery t21/t51
+A<- mean_values %>%
+ filter(Treatment != "C0") %>%
+  filter(Time %in% c("21", "51")) %>%
+ggplot(aes(x = Time, y = mean_value, color = label, group = label)) +
+  geom_point() +  # Add points for the mean values
+  geom_line() +   # Connect the mean values for each species across time
+   geom_errorbar(aes(ymin = mean_value-se, ymax = mean_value+se), width = 0.2) +
+  facet_wrap(~ variable, scales = "free_y", ncol = 3) +
+  labs(
+       x = "",
+       y = "Mean trait values",
+       color = "Species") +
+  theme_minimal(base_size = 20) +
+  theme(legend.text = element_text(face = "italic"), legend.position = "bottom")+
+  ggtitle("Current drought scenario and recovery")
+
+
+A
+
+#projected drought and recovery t27/t57
+A<- mean_values %>%
+ filter(Treatment != "C0") %>%
+  filter(Time %in% c("27", "57")) %>%
+ggplot(aes(x = Time, y = mean_value, color = label, group = label)) +
+  geom_point() +  # Add points for the mean values
+  geom_line() +   # Connect the mean values for each species across time
+   geom_errorbar(aes(ymin = mean_value-se, ymax = mean_value+se), width = 0.2) +
+  facet_wrap(~ variable, scales = "free_y", ncol = 3) +
+  labs(
+       x = "",
+       y = "Mean trait values",
+       color = "Species") +
+  theme_minimal(base_size = 20) +
+  theme(legend.text = element_text(face = "italic"), legend.position = "bottom")+
+  ggtitle("Projected drought scenario and recovery")
+
+
+A
+
+#extreme drought and recovery t71/t101
+A<- mean_values %>%
+ filter(Treatment != "C0") %>%
+  filter(Time %in% c("71", "101")) %>%
+ggplot(aes(x = Time, y = mean_value, color = label, group = label)) +
+  geom_point() +  # Add points for the mean values
+  geom_line() +   # Connect the mean values for each species across time
+   geom_errorbar(aes(ymin = mean_value-se, ymax = mean_value+se), width = 0.2) +
+  facet_wrap(~ variable, scales = "free_y", ncol = 3) +
+  labs(
+       x = "",
+       y = "Mean trait values",
+       color = "Species") +
+  theme_minimal(base_size = 20) +
+  theme(legend.text = element_text(face = "italic"), legend.position = "bottom")+
+  ggtitle("Extreme drought scenario and recovery")
+
+
+A
+
+#only drought treatment
+A<- mean_values %>%
+ filter(Treatment != "C0") %>%
+  filter(Time %in% c("21", "27", "71")) %>%
+ggplot(aes(x = Time, y = mean_value, color = label, group = label)) +
+  geom_point() +  # Add points for the mean values
+  geom_line() +   # Connect the mean values for each species across time
+   geom_errorbar(aes(ymin = mean_value-se, ymax = mean_value+se), width = 0.2) +
+  facet_wrap(~ variable, scales = "free_y", ncol = 3) +
+  labs(
+       x = "",
+       y = "Mean trait values",
+       color = "Species") +
+  theme_minimal(base_size = 20) +
+  theme(legend.text = element_text(face = "italic"), legend.position = "bottom")+
+  ggtitle("Increasing drought scenarios")
+
+
+A
+
+```
+
+##plot SI
+```{r}
+Data <- Global_DRYER$trait_data 
+DATHDl <- Global_DRYER$HDLW_data
+
+Data <- left_join(Data, DATHDl)
+
+names(Data)
+
+Data <- Data %>%  
+  dplyr::select(-Comment_D, -Comment) %>% dplyr::select(Time, Treatment, Species, 
+       Asat ,gs, E, WUE, RWC, Pmidday , Chloro , FvFm , LT , LA_rwc , SLA, TotalLeafSurface, Height, Diameter, RootShoot) %>% rename(LA = LA_rwc, Total_LA = TotalLeafSurface)
+#other graph all species joint
+Data <- Data %>%
+  mutate(Treatment = case_when(
+    Time == "t0" & Treatment %in% c("D1", "D2", "D3") ~ "C0",
+    TRUE ~ Treatment
+  )) %>% mutate(Period = ifelse(Time %in% c("t21","t27", "t71"), "Drought", 
+                        ifelse(Time %in% c("t51", "t57","t101"), "Recovery", 
+                               ifelse(Time == "t0", "t0", NA)))) 
+
+melted_data <- melt(Data %>% dplyr::select(-Species, -Time), id.vars = c("Treatment", "Period")) 
+
+
+# Calculate mean values for each trait at each time point
+mean_values <- melted_data %>%
+  group_by(Treatment, Period, variable) %>%
+  summarise(mean_value = mean(value, na.rm = TRUE),
+            n = n(),
+            sd = sd(value, na.rm = TRUE),
+            se = sd(value,na.rm = TRUE) / sqrt(n))
+
+## region we want to highlight
+regions_Drought <- tibble(x1 = c("t0"), x2 = c("Drought"), y1 = -Inf, y2 = +Inf) #orange: #ff9e00
+regions_Recovery <- tibble(x1 = c("Drought"), x2 = c("Recovery"), y1 = -Inf, y2 = +Inf) #blue: #219ebc
+
+
+colors <- c(D1 = "#8CB425", D2 = "#ECE320", D3 = "#DF5220", C0 = "#219ebc")
+mean_values$Period <- factor(mean_values$Period, levels = c("t0", "Drought", "Recovery"))
+
+mean_values %>%
+ggplot(aes(x = Period, y = mean_value, color = Treatment, group= Treatment)) +
+  geom_point() +  # Add points for the mean values
+  geom_line() +   # Connect the mean values for each species across time
+   geom_errorbar(aes(ymin = mean_value-se, ymax = mean_value+se), width = 0.2) +
+  facet_wrap(~ variable, scales = "free_y", ncol = 3) +
+  labs(
+       x = "",
+       y = "Mean trait values",
+       color = "Species") +
+   scale_color_manual("Treatment", values = c("#219ebc", "#8CB425", "#ECE320", "#DF5220"))+
+  theme_minimal(base_size = 20) +
+  theme(legend.text = element_text(face = "italic"), legend.position = "bottom")+
+  ggtitle("Drought scenarios and associated recovery period")+
+     geom_rect(data = regions_Recovery,
+            inherit.aes = FALSE,
+            mapping = aes(xmin = x1, xmax = x2,
+                          ymin = y1, ymax = y2),
+            color = "transparent",
+            fill = "#219ebc",
+            alpha = 0.2)+
+  geom_rect(data = regions_Drought,
+            inherit.aes = FALSE,
+            mapping = aes(xmin = x1, xmax = x2,
+                          ymin = y1, ymax = y2),
+            color = "transparent",
+            fill = "#ff9e00",
+            alpha = 0.2)
+
+```
+
+##Specific traits variation
+```{r}
+Data <- Global_DRYER$trait_data 
+DATHDl <- Global_DRYER$HDLW_data
+
+Data <- left_join(Data, DATHDl)
+
+names(Data)
+
+Data <- Data %>%  
+  dplyr::select(-Comment_D, -Comment) %>% dplyr::select(Time, Treatment, Species, 
+       Asat ,gs, E, WUE, RWC, Pmidday , Chloro , FvFm , LT , LA_rwc , SLA, TotalLeafSurface, Height, Diameter, RootShoot) %>% rename(LA = LA_rwc, Total_LA = TotalLeafSurface)
+
+Data <- Data %>%
+  mutate(Treatment = case_when(
+    Time == "t0" & Treatment %in% c("D1", "D2", "D3") ~ "C0",
+    TRUE ~ Treatment
+  )) %>% mutate(Period = ifelse(Time %in% c("t21","t27", "t71"), "Drought", 
+                        ifelse(Time %in% c("t51", "t57","t101"), "Recovery", 
+                               ifelse(Time == "t0", "t0", NA)))) 
+
+melted_data <- melt(Data %>% dplyr::select(-Time), id.vars = c("Species", "Treatment", "Period")) 
+
+
+# Calculate mean values for each trait at each time point
+mean_values <- melted_data %>%
+  group_by(Species, Treatment, Period, variable) %>%
+  summarise(mean_value = mean(value, na.rm = TRUE),
+            n = n(),
+            sd = sd(value, na.rm = TRUE),
+            se = sd(value,na.rm = TRUE) / sqrt(n))
+
+## region we want to highlight
+regions_Drought <- tibble(x1 = c("t0"), x2 = c("Drought"), y1 = -Inf, y2 = +Inf) #orange: #ff9e00
+regions_Recovery <- tibble(x1 = c("Drought"), x2 = c("Recovery"), y1 = -Inf, y2 = +Inf) #blue: #219ebc
+
+
+colors <- c(D1 = "#8CB425", D2 = "#ECE320", D3 = "#DF5220", C0 = "#219ebc")
+mean_values$Period <- factor(mean_values$Period, levels = c("t0", "Drought", "Recovery"))
+
+
+# Create a list to store the individual plots
+plots_list <- list()
+
+# List of unique species in the 'Species' column
+species_list <- unique(mean_values$Species)
+
+# Loop through each species to create separate plots
+for (species in species_list) {
+  # Filter the data for the current species
+  species_data <- mean_values %>% filter(Species == species)
+  
+  # Create the ggplot for the current species
+  p <- ggplot(species_data, aes(x = Period, y = mean_value, color = Treatment, group = Treatment)) +
+    geom_point() +  # Add points for the mean values
+    geom_line() +   # Connect the mean values for each species across time
+    geom_errorbar(aes(ymin = mean_value - se, ymax = mean_value + se), width = 0.2) +
+    facet_wrap(~ variable, scales = "free_y", ncol = 3) +
+    labs(
+      x = "",
+      y = "Mean trait values",
+      color = "Species"
+    ) +
+       scale_color_manual("Treatment", values = c("#219ebc", "#8CB425", "#ECE320", "#DF5220"))+
+    theme_minimal(base_size = 20) +
+    theme(legend.text = element_text(face = "italic"), legend.position = "bottom") +
+    ggtitle(paste("Drought scenarios and associated recovery period for", species)) +
+    geom_rect(
+      data = regions_Recovery,
+      inherit.aes = FALSE,
+      mapping = aes(xmin = x1, xmax = x2,
+                    ymin = y1, ymax = y2),
+      color = "transparent",
+      fill = "#219ebc",
+      alpha = 0.2
+    ) +
+    geom_rect(
+      data = regions_Drought,
+      inherit.aes = FALSE,
+      mapping = aes(xmin = x1, xmax = x2,
+                    ymin = y1, ymax = y2),
+      color = "transparent",
+      fill = "#ff9e00",
+      alpha = 0.2
+    )
+  
+  # Add the plot to the list
+  plots_list[[species]] <- p
+
+  ggsave(filename = paste(species, ".jpeg", sep = ""), width = 15, height = 15,plot = p)
+}
+
+
+```
+
+
+#Trait distribution
+```{r}
+Data <- Global_DRYER$trait_data 
+DATHDl <- Global_DRYER$HDLW_data
+
+Data <- left_join(Data, DATHDl)
+
+names(Data)
+
+Data <- Data %>%  
+  dplyr::select(-Comment_D, -Comment) %>% dplyr::select(UniqueCode, Time, Treatment, Species, Asat ,gs, E, WUE, RWC, Pmidday , Chloro , FvFm , LT , LA_rwc , SLA, TotalLeafSurface, Height, Diameter, RootShoot) %>% rename(LA = LA_rwc, Total_LA = TotalLeafSurface)
+
+Data$WUE[which(Data$UniqueCode == 710)] <- 0.0000000000001 #otherwise it considers it to be negative!
+
+# Test of normality with Shapiro-Wilk normality test 
+
+### Raw data traits
+traits <- Data %>%
+  dplyr::select(-Time, -Treatment, -Species, -UniqueCode)
+
+# Loop through each trait
+for (trait_name in colnames(traits)) {
+  # Extract the data for the current trait
+  trait_data <- traits[[trait_name]]
+    # Perform Shapiro-Wilk normality test
+  norm <- shapiro.test(trait_data)
+    # Print the normality test results
+  cat("Trait:", trait_name, "\n")
+  print(norm)
+    # Plot the histogram
+  hist(trait_data, main=paste("Histogram of", trait_name), xlab=trait_name)
+    # Plot the QQ plot
+  qqnorm(trait_data, main=paste("QQ Plot of", trait_name))
+  qqline(trait_data)
+    # Pause execution to view each plot (optional, comment this line out if you don't want to pause)
+  readline("Press Enter to continue...")
+    # Clear the plot
+  dev.off()
+}
+
+### Log data except chloro
+
+
+traits <- Data %>%  dplyr::select(-Time, -Treatment, -Species,-UniqueCode, -Chloro) %>% mutate_at(c("Pmidday", "Asat", "WUE"), abs)
+
+for (trait_name in colnames(traits)) {
+  trait_data <- traits[[trait_name]]
+  
+  # Perform the Box-Cox transformation
+  bc <- boxcox(lm(trait_data ~ Data$Treatment))
+  lambda <- bc$x[which.max(bc$y)]
+  transformed_data <- (trait_data^lambda - 1) / lambda
+  
+  # Create a new model using the transformed data
+  new_model <- lm(transformed_data ~ 1)
+  
+  # Plot the QQ plot of the residuals of the new model
+  qqnorm(new_model$residuals, main = paste("QQ Plot of Residuals for", trait_name))
+  qqline(new_model$residuals)
+  
+  # Pause execution to view each plot (optional, comment this line out if you don't want to pause)
+  readline("Press Enter to continue...")
+  
+  # Clear the plot
+  dev.off()
+  
+  # Store the transformed data in a new column in the original tibble
+  Data[paste0("norm_", trait_name)] <- transformed_data
+}
+
+```
+
+#Linear models
+
+Then, we used linear models to determine which plant traits significantly responded to  drought treatment and whether such responses were consistent across plant species. Traits were transformed to meet homoscedasticity and normality assumptions. We use a two-way ANOVA that reflected our full factorial design with water availability  (drought and non-drought), plant species (i.e., 7 species) and their interactions, considered as fixed factors on each plant trait separately.
+
+We used linear mixed-effects models to assess the influences of drought on traits separately. Species, block, treatment and the interaction between species and treatment were set as fixed-effects terms (see Schmid et al. for a discussion of defining terms as fixed- vs. random-effects terms, including a justification of preference for treating block as a fixed-effects term). We boxcox transformed the traits prior to analysis to improve the normality of residuals. 
+
+##Drought
+
+```{r}
+Data #from above
+Block_info <- Global_DRYER$sample_ID %>% dplyr::select(UniqueCode, Block, Sblock) %>% mutate(Block.Sblock = paste0(Block, ".", Sblock))
+Data <- left_join(Data, Block_info)
+
+Data_model <- Data %>%  
+dplyr::select(UniqueCode, Time, Treatment, Species, Block.Sblock, norm_Asat ,norm_gs, norm_E, norm_WUE, norm_RWC, norm_Pmidday , Chloro , norm_FvFm , norm_LT , norm_LA , norm_SLA, norm_Total_LA, norm_Height, norm_Diameter, norm_RootShoot) %>%
+  filter(Time %in% c("t0","t21","t27","t71"))
+
+# test the interactive effects of drought 
+# selection and species
+Data_Asat <- Data_model %>%
+  dplyr::select(norm_Asat, Treatment, Species)%>%
+  drop_na()
+
+m1 = aov(terms(norm_Asat ~ Treatment #values are different across treatment
+               + Species #values are different across species
+               + Species:Treatment #if species vary their responses of Asat to the drought treatment
+               +Block.Sblock,
+               keep.order = T), data= Data_model)
+m1_summary<-summary(m1)
+a<-as.data.frame(a[[1]])
+autoplot(m1) #include n=369
+
+#gs
+m2 = aov(terms(norm_gs ~ Treatment #values are different across treatment
+               + Species #values are different across species
+               + Species:Treatment #if species vary their responses of gs to the drought treatment
+               +Block.Sblock,
+               keep.order = T), data= Data_model)
+m2_summary <- summary(m2)
+autoplot(m2) #include n=372
+
+#E
+Data_E <- Data_model %>%
+  dplyr::select(norm_E, Treatment, Species)%>%
+  drop_na()
+
+m3 = aov(terms(norm_E ~ Treatment #values are different across treatment
+               + Species #values are different across species
+               + Species:Treatment #if species vary their responses of E to the drought treatment
+               +Block.Sblock,
+               keep.order = T), data= Data_model)
+m3_summary <- summary(m3)
+autoplot(m3) #include n=369
+
+#WUE
+m4 = aov(terms(norm_WUE ~ Treatment #values are different across treatment
+               + Species #values are different across species
+               + Species:Treatment #if species vary their responses of Asat to the drought treatment
+               +Block.Sblock,
+               keep.order = T), data= Data_model)
+m4_summary<-summary(m4)
+autoplot(m4) #include n=369
+
+#RWC
+m5 = aov(terms(norm_RWC ~ Treatment #values are different across treatment
+               + Species #values are different across species
+               + Species:Treatment #if species vary their responses of Asat to the drought treatment
+               +Block.Sblock,
+               keep.order = T), data= Data_model)
+m5_summary<-summary(m5)
+autoplot(m5) #include n=350
+
+#Pmidday
+m6 = aov(terms(norm_Pmidday ~ Treatment #values are different across treatment
+               + Species #values are different across species
+               + Species:Treatment #if species vary their responses of Asat to the drought treatment
+               +Block.Sblock,
+               keep.order = T), data= Data_model)
+m6_summary<- summary(m6)
+autoplot(m6) #include n=260
+
+#Chloro
+m7 = aov(terms(Chloro ~ Treatment #values are different across treatment
+               + Species #values are different across species
+               + Species:Treatment #if species vary their responses of Asat to the drought treatment
+               +Block.Sblock,
+               keep.order = T), data= Data_model)
+m7_summary<-summary(m7)
+autoplot(m7) #include n=372
+
+#FvFm
+m8 = aov(terms(norm_FvFm ~ Treatment #values are different across treatment
+               + Species #values are different across species
+               + Species:Treatment #if species vary their responses of Asat to the drought treatment
+               +Block.Sblock,
+               keep.order = T), data= Data_model)
+m8_summary<-summary(m8)
+autoplot(m8) #include n=372
+
+#LT
+m9 = aov(terms(norm_LT ~ Treatment #values are different across treatment
+               + Species #values are different across species
+               + Species:Treatment #if species vary their responses of Asat to the drought treatment
+               +Block.Sblock,
+               keep.order = T), data= Data_model)
+m9_summary<-summary(m9)
+autoplot(m9) #include n=369
+
+#LA
+m10 = aov(terms(norm_LA ~ Treatment #values are different across treatment
+               + Species #values are different across species
+               + Species:Treatment #if species vary their responses of Asat to the drought treatment
+               +Block.Sblock,
+               keep.order = T), data= Data_model)
+m10_summary<-summary(m10)
+autoplot(m10) #include n=352
+
+#SLA
+m11 = aov(terms(norm_SLA ~ Treatment #values are different across treatment
+               + Species #values are different across species
+               + Species:Treatment #if species vary their responses of Asat to the drought treatment
+               +Block.Sblock,
+               keep.order = T), data= Data_model)
+m11_summary<-summary(m11)
+autoplot(m11) #include n=350
+
+#Total_LA
+m12 = aov(terms(norm_Total_LA ~ Treatment #values are different across treatment
+               + Species #values are different across species
+               + Species:Treatment #if species vary their responses of Asat to the drought treatment
+               +Block.Sblock,
+               keep.order = T), data= Data_model)
+m12_summary<-summary(m12)
+autoplot(m12) #include n=354
+
+#height
+m13 = aov(terms(norm_Height ~ Treatment #values are different across treatment
+               + Species #values are different across species
+               + Species:Treatment #if species vary their responses of Asat to the drought treatment
+               +Block.Sblock,
+               keep.order = T), data= Data_model)
+m13_summary<-summary(m13)
+autoplot(m13) #include n=640
+
+#Diameter
+m14 = aov(terms(norm_Diameter ~ Treatment #values are different across treatment
+               + Species #values are different across species
+               + Species:Treatment #if species vary their responses of Asat to the drought treatment
+               +Block.Sblock,
+               keep.order = T), data= Data_model)
+m14_summary<-summary(m14)
+autoplot(m14) #include n=639
+
+#Rootshoot
+m15 = aov(terms(norm_RootShoot ~ Treatment #values are different across treatment
+               + Species #values are different across species
+               + Species:Treatment #if species vary their responses of Asat to the drought treatment
+               +Block.Sblock,
+               keep.order = T), data= Data_model)
+m15_summary<-summary(m15)
+autoplot(m15) #include n=350
+```
+
+**Residuals vs Fitted.** Used to check the linear relationship assumptions. A horizontal line at 0, without distinct patterns is an indication for a linear relationship, what is good.
+
+**Normal Q-Q.** Used to examine whether the residuals are normally distributed. It’s good if residuals points follow the straight dashed line.
+
+**Scale-Location (or Spread-Location).** Used to check the homogeneity of variance of the residuals (homoscedasticity). Horizontal line with equally spread points is a good indication of homoscedasticity.
+
+**Residuals vs Leverage.** Used to identify influential cases, that is extreme values that might influence the regression results when included or excluded from the analysis. This plot will be described further in the next sections.
+
+###table for linear model
+```{r}
+#Asat
+m1_summary <- as.data.frame(m1_summary[[1]])
+m1_F_values <- m1_summary$`F value`
+m1_p_values <- m1_summary$`Pr(>F)` 
+ m1_summary$`F value` <- round( m1_summary$`F value`, digits = 3)
+ m1_summary$`Pr(>F)`<-round( m1_summary$`Pr(>F)`, digits = 3)
+m1_df <- m1_summary[c(1:4),] %>%
+  mutate(Asat = paste0( `F value`)) %>% 
+  dplyr::select(Asat) 
+
+#gs
+m2_summary <- as.data.frame(m2_summary[[1]])
+m2_F_values <- m2_summary$`F value`
+m2_p_values <- m2_summary$`Pr(>F)` 
+ m2_summary$`F value` <- round( m2_summary$`F value`, digits = 3)
+ m2_summary$`Pr(>F)`<-round( m2_summary$`Pr(>F)`, digits = 3)
+m2_df <- m2_summary[c(1:4),] %>%
+  mutate(gs = paste0( `F value`)) %>% 
+  dplyr::select(gs) 
+
+
+#E
+m3_summary <- as.data.frame(m3_summary[[1]])
+m3_F_values <- m3_summary$`F value`
+m3_p_values <- m3_summary$`Pr(>F)` 
+ m3_summary$`F value` <- round( m3_summary$`F value`, digits = 3)
+ m3_summary$`Pr(>F)`<-round( m3_summary$`Pr(>F)`, digits = 3)
+m3_df <- m3_summary[c(1:4),] %>%
+  mutate(E = paste0( `F value`)) %>% 
+  dplyr::select(E) 
+
+#WUE
+m4_summary <- as.data.frame(m4_summary[[1]])
+m4_F_values <- m4_summary$`F value`
+m4_p_values <- m4_summary$`Pr(>F)` 
+ m4_summary$`F value` <- round( m4_summary$`F value`, digits = 3)
+ m4_summary$`Pr(>F)`<-round( m4_summary$`Pr(>F)`, digits = 3)
+m4_df <- m4_summary[c(1:4),] %>%
+  mutate(WUE = paste0( `F value`)) %>% 
+  dplyr::select(WUE) 
+
+#RWC
+m5_summary <- as.data.frame(m5_summary[[1]])
+m5_F_values <- m5_summary$`F value`
+m5_p_values <- m5_summary$`Pr(>F)` 
+ m5_summary$`F value` <- round( m5_summary$`F value`, digits = 3)
+ m5_summary$`Pr(>F)`<-round( m5_summary$`Pr(>F)`, digits = 3)
+m5_df <- m5_summary[c(1:4),] %>%
+  mutate(RWC= paste0( `F value`)) %>% 
+  dplyr::select(RWC) 
+
+#Pmidday
+m6_summary <- as.data.frame(m6_summary[[1]])
+m6_F_values <- m6_summary$`F value`
+m6_p_values <- m6_summary$`Pr(>F)` 
+ m6_summary$`F value` <- round( m6_summary$`F value`, digits = 3)
+ m6_summary$`Pr(>F)`<-round( m6_summary$`Pr(>F)`, digits = 3)
+m6_df <- m6_summary[c(1:4),] %>%
+  mutate(Pmidday= paste0( `F value`)) %>% 
+  dplyr::select(Pmidday) 
+
+#Chloro
+m7_summary <- as.data.frame(m7_summary[[1]])
+m7_F_values <- m7_summary$`F value`
+m7_p_values <- m7_summary$`Pr(>F)` 
+ m7_summary$`F value` <- round( m7_summary$`F value`, digits = 3)
+ m7_summary$`Pr(>F)`<-round( m7_summary$`Pr(>F)`, digits = 3)
+m7_df <- m7_summary[c(1:4),] %>%
+  mutate(Chloro = paste0( `F value`)) %>% 
+  dplyr::select(Chloro) 
+
+#FvFm
+m8_summary <- as.data.frame(m8_summary[[1]])
+m8_F_values <- m8_summary$`F value`
+m8_p_values <- m8_summary$`Pr(>F)` 
+ m8_summary$`F value` <- round( m8_summary$`F value`, digits = 3)
+ m8_summary$`Pr(>F)`<-round( m8_summary$`Pr(>F)`, digits = 3)
+m8_df <- m8_summary[c(1:4),] %>%
+  mutate(FvFm = paste0( `F value`)) %>% 
+  dplyr::select(FvFm) 
+
+#LT
+m9_summary <- as.data.frame(m9_summary[[1]])
+m9_F_values <- m9_summary$`F value`
+m9_p_values <- m9_summary$`Pr(>F)` 
+ m9_summary$`F value` <- round( m9_summary$`F value`, digits = 3)
+ m9_summary$`Pr(>F)`<-round( m9_summary$`Pr(>F)`, digits = 3)
+m9_df <- m9_summary[c(1:4),] %>%
+  mutate(LT= paste0( `F value`)) %>% 
+  dplyr::select(LT) 
+
+#LA
+m10_summary <- as.data.frame(m10_summary[[1]])
+m10_F_values <- m10_summary$`F value`
+m10_p_values <- m10_summary$`Pr(>F)` 
+ m10_summary$`F value` <- round( m10_summary$`F value`, digits = 3)
+ m10_summary$`Pr(>F)`<-round( m10_summary$`Pr(>F)`, digits = 3)
+m10_df <- m10_summary[c(1:4),] %>%
+  mutate(LA= paste0( `F value`)) %>% 
+  dplyr::select(LA)
+
+#SLA
+m11_summary <- as.data.frame(m11_summary[[1]])
+m11_F_values <- m11_summary$`F value`
+m11_p_values <- m11_summary$`Pr(>F)` 
+ m11_summary$`F value` <- round( m11_summary$`F value`, digits = 3)
+ m11_summary$`Pr(>F)`<-round( m11_summary$`Pr(>F)`, digits = 3)
+m11_df <- m11_summary[c(1:4),] %>%
+  mutate(SLA= paste0( `F value`)) %>% 
+  dplyr::select(SLA)
+
+#Total_LA
+m12_summary <- as.data.frame(m12_summary[[1]])
+m12_F_values <- m12_summary$`F value`
+m12_p_values <- m12_summary$`Pr(>F)` 
+ m12_summary$`F value` <- round( m12_summary$`F value`, digits = 3)
+ m12_summary$`Pr(>F)`<-round( m12_summary$`Pr(>F)`, digits = 3)
+m12_df <- m12_summary[c(1:4),] %>%
+  mutate(Total_LA= paste0( `F value`)) %>% 
+  dplyr::select(Total_LA)
+
+#height
+m13_summary <- as.data.frame(m13_summary[[1]])
+m13_F_values <- m13_summary$`F value`
+m13_p_values <- m13_summary$`Pr(>F)` 
+ m13_summary$`F value` <- round( m13_summary$`F value`, digits = 3)
+ m13_summary$`Pr(>F)`<-round( m13_summary$`Pr(>F)`, digits = 3)
+m13_df <- m13_summary[c(1:4),] %>%
+  mutate(Height= paste0( `F value`)) %>% 
+  dplyr::select(Height)
+
+#Diameter
+m14_summary <- as.data.frame(m14_summary[[1]])
+m14_F_values <- m14_summary$`F value`
+m14_p_values <- m14_summary$`Pr(>F)` 
+ m14_summary$`F value` <- round( m14_summary$`F value`, digits = 3)
+ m14_summary$`Pr(>F)`<-round( m14_summary$`Pr(>F)`, digits = 3)
+m14_df <- m14_summary[c(1:4),] %>%
+  mutate(Diameter= paste0( `F value`)) %>% 
+  dplyr::select(Diameter)
+
+#Rootshoot
+m15_summary <- as.data.frame(m15_summary[[1]])
+m15_F_values <- m15_summary$`F value`
+m15_p_values <- m15_summary$`Pr(>F)` 
+ m15_summary$`F value` <- round( m15_summary$`F value`, digits = 3)
+ m15_summary$`Pr(>F)`<-round( m15_summary$`Pr(>F)`, digits = 3)
+m15_df <- m15_summary[c(1:4),] %>%
+  mutate(Rootshoot= paste0( `F value`)) %>% 
+  dplyr::select(Rootshoot)
+
+# Combine m1_df and m2_df
+combined_df <- cbind(m1_df, m2_df, m3_df, m4_df, m5_df, m6_df, m7_df, m8_df, m9_df, m10_df, m11_df, m12_df, m13_df, m14_df, m15_df)
+
+write.csv(x = combined_df, file = "linear_models.csv")
+
+```
+
+##Recovery
+
+```{r}
+Data #from above
+Block_info <- Global_DRYER$sample_ID %>% dplyr::select(UniqueCode, Block, Sblock) %>% mutate(Block.Sblock = paste0(Block, ".", Sblock))
+Data <- left_join(Data, Block_info)
+
+Data_model <- Data %>%  
+dplyr::select(UniqueCode, Time, Treatment, Species, Block.Sblock, norm_Asat ,norm_gs, norm_E, norm_WUE, norm_RWC, norm_Pmidday , Chloro , norm_FvFm , norm_LT , norm_LA , norm_SLA, norm_Total_LA, norm_Height, norm_Diameter, norm_RootShoot) %>%
+  filter(Time %in% c("t51","t57","t101"))
+
+# test the interactive effects of drought 
+# selection and species
+m1 = aov(terms(norm_Asat ~ Treatment #values are different across treatment
+               + Species #values are different across species
+               + Species:Treatment #if species vary their responses of Asat to the drought treatment
+               +Block.Sblock,
+               keep.order = T), data= Data_model)
+m1_summary<-summary(m1)
+a<-as.data.frame(a[[1]])
+autoplot(m1) #include n=369
+
+#gs
+m2 = aov(terms(norm_gs ~ Treatment #values are different across treatment
+               + Species #values are different across species
+               + Species:Treatment #if species vary their responses of gs to the drought treatment
+               +Block.Sblock,
+               keep.order = T), data= Data_model)
+m2_summary <- summary(m2)
+autoplot(m2) #include n=372
+
+#E
+Data_E <- Data_model %>%
+  dplyr::select(norm_E, Treatment, Species)%>%
+  drop_na()
+
+m3 = aov(terms(norm_E ~ Treatment #values are different across treatment
+               + Species #values are different across species
+               + Species:Treatment #if species vary their responses of E to the drought treatment
+               +Block.Sblock,
+               keep.order = T), data= Data_model)
+m3_summary <- summary(m3)
+autoplot(m3) #include n=369
+
+#WUE
+m4 = aov(terms(norm_WUE ~ Treatment #values are different across treatment
+               + Species #values are different across species
+               + Species:Treatment #if species vary their responses of Asat to the drought treatment
+               +Block.Sblock,
+               keep.order = T), data= Data_model)
+m4_summary<-summary(m4)
+autoplot(m4) #include n=369
+
+#RWC
+m5 = aov(terms(norm_RWC ~ Treatment #values are different across treatment
+               + Species #values are different across species
+               + Species:Treatment #if species vary their responses of Asat to the drought treatment
+               +Block.Sblock,
+               keep.order = T), data= Data_model)
+m5_summary<-summary(m5)
+autoplot(m5) #include n=350
+
+#Pmidday
+m6 = aov(terms(norm_Pmidday ~ Treatment #values are different across treatment
+               + Species #values are different across species
+               + Species:Treatment #if species vary their responses of Asat to the drought treatment
+               +Block.Sblock,
+               keep.order = T), data= Data_model)
+m6_summary<- summary(m6)
+autoplot(m6) #include n=260
+
+#Chloro
+m7 = aov(terms(Chloro ~ Treatment #values are different across treatment
+               + Species #values are different across species
+               + Species:Treatment #if species vary their responses of Asat to the drought treatment
+               +Block.Sblock,
+               keep.order = T), data= Data_model)
+m7_summary<-summary(m7)
+autoplot(m7) #include n=372
+
+#FvFm
+m8 = aov(terms(norm_FvFm ~ Treatment #values are different across treatment
+               + Species #values are different across species
+               + Species:Treatment #if species vary their responses of Asat to the drought treatment
+               +Block.Sblock,
+               keep.order = T), data= Data_model)
+m8_summary<-summary(m8)
+autoplot(m8) #include n=372
+
+#LT
+m9 = aov(terms(norm_LT ~ Treatment #values are different across treatment
+               + Species #values are different across species
+               + Species:Treatment #if species vary their responses of Asat to the drought treatment
+               +Block.Sblock,
+               keep.order = T), data= Data_model)
+m9_summary<-summary(m9)
+autoplot(m9) #include n=369
+
+#LA
+m10 = aov(terms(norm_LA ~ Treatment #values are different across treatment
+               + Species #values are different across species
+               + Species:Treatment #if species vary their responses of Asat to the drought treatment
+               +Block.Sblock,
+               keep.order = T), data= Data_model)
+m10_summary<-summary(m10)
+autoplot(m10) #include n=352
+
+#SLA
+m11 = aov(terms(norm_SLA ~ Treatment #values are different across treatment
+               + Species #values are different across species
+               + Species:Treatment #if species vary their responses of Asat to the drought treatment
+               +Block.Sblock,
+               keep.order = T), data= Data_model)
+m11_summary<-summary(m11)
+autoplot(m11) #include n=350
+
+#Total_LA
+m12 = aov(terms(norm_Total_LA ~ Treatment #values are different across treatment
+               + Species #values are different across species
+               + Species:Treatment #if species vary their responses of Asat to the drought treatment
+               +Block.Sblock,
+               keep.order = T), data= Data_model)
+m12_summary<-summary(m12)
+autoplot(m12) #include n=354
+
+#height
+m13 = aov(terms(norm_Height ~ Treatment #values are different across treatment
+               + Species #values are different across species
+               + Species:Treatment #if species vary their responses of Asat to the drought treatment
+               +Block.Sblock,
+               keep.order = T), data= Data_model)
+m13_summary<-summary(m13)
+autoplot(m13) #include n=640
+
+#Diameter
+m14 = aov(terms(norm_Diameter ~ Treatment #values are different across treatment
+               + Species #values are different across species
+               + Species:Treatment #if species vary their responses of Asat to the drought treatment
+               +Block.Sblock,
+               keep.order = T), data= Data_model)
+m14_summary<-summary(m14)
+autoplot(m14) #include n=639
+
+#Rootshoot
+m15 = aov(terms(norm_RootShoot ~ Treatment #values are different across treatment
+               + Species #values are different across species
+               + Species:Treatment #if species vary their responses of Asat to the drought treatment
+               +Block.Sblock,
+               keep.order = T), data= Data_model)
+m15_summary<-summary(m15)
+autoplot(m15) #include n=350
+```
+
+###table for linear model - recovery
+```{r}
+#Asat
+m1_summary <- as.data.frame(m1_summary[[1]])
+m1_F_values <- m1_summary$`F value`
+m1_p_values <- m1_summary$`Pr(>F)` 
+ m1_summary$`F value` <- round( m1_summary$`F value`, digits = 3)
+ m1_summary$`Pr(>F)`<-round( m1_summary$`Pr(>F)`, digits = 3)
+m1_df <- m1_summary[c(1:4),] %>%
+  mutate(Asat = paste0( `F value`)) %>% 
+  dplyr::select(Asat) 
+
+#gs
+m2_summary <- as.data.frame(m2_summary[[1]])
+m2_F_values <- m2_summary$`F value`
+m2_p_values <- m2_summary$`Pr(>F)` 
+ m2_summary$`F value` <- round( m2_summary$`F value`, digits = 3)
+ m2_summary$`Pr(>F)`<-round( m2_summary$`Pr(>F)`, digits = 3)
+m2_df <- m2_summary[c(1:4),] %>%
+  mutate(gs = paste0( `F value`)) %>% 
+  dplyr::select(gs) 
+
+
+#E
+m3_summary <- as.data.frame(m3_summary[[1]])
+m3_F_values <- m3_summary$`F value`
+m3_p_values <- m3_summary$`Pr(>F)` 
+ m3_summary$`F value` <- round( m3_summary$`F value`, digits = 3)
+ m3_summary$`Pr(>F)`<-round( m3_summary$`Pr(>F)`, digits = 3)
+m3_df <- m3_summary[c(1:4),] %>%
+  mutate(E = paste0( `F value`)) %>% 
+  dplyr::select(E) 
+
+#WUE
+m4_summary <- as.data.frame(m4_summary[[1]])
+m4_F_values <- m4_summary$`F value`
+m4_p_values <- m4_summary$`Pr(>F)` 
+ m4_summary$`F value` <- round( m4_summary$`F value`, digits = 3)
+ m4_summary$`Pr(>F)`<-round( m4_summary$`Pr(>F)`, digits = 3)
+m4_df <- m4_summary[c(1:4),] %>%
+  mutate(WUE = paste0( `F value`)) %>% 
+  dplyr::select(WUE) 
+
+#RWC
+m5_summary <- as.data.frame(m5_summary[[1]])
+m5_F_values <- m5_summary$`F value`
+m5_p_values <- m5_summary$`Pr(>F)` 
+ m5_summary$`F value` <- round( m5_summary$`F value`, digits = 3)
+ m5_summary$`Pr(>F)`<-round( m5_summary$`Pr(>F)`, digits = 3)
+m5_df <- m5_summary[c(1:4),] %>%
+  mutate(RWC= paste0( `F value`)) %>% 
+  dplyr::select(RWC) 
+
+#Pmidday
+m6_summary <- as.data.frame(m6_summary[[1]])
+m6_F_values <- m6_summary$`F value`
+m6_p_values <- m6_summary$`Pr(>F)` 
+ m6_summary$`F value` <- round( m6_summary$`F value`, digits = 3)
+ m6_summary$`Pr(>F)`<-round( m6_summary$`Pr(>F)`, digits = 3)
+m6_df <- m6_summary[c(1:4),] %>%
+  mutate(Pmidday= paste0( `F value`)) %>% 
+  dplyr::select(Pmidday) 
+
+#Chloro
+m7_summary <- as.data.frame(m7_summary[[1]])
+m7_F_values <- m7_summary$`F value`
+m7_p_values <- m7_summary$`Pr(>F)` 
+ m7_summary$`F value` <- round( m7_summary$`F value`, digits = 3)
+ m7_summary$`Pr(>F)`<-round( m7_summary$`Pr(>F)`, digits = 3)
+m7_df <- m7_summary[c(1:4),] %>%
+  mutate(Chloro = paste0( `F value`)) %>% 
+  dplyr::select(Chloro) 
+
+#FvFm
+m8_summary <- as.data.frame(m8_summary[[1]])
+m8_F_values <- m8_summary$`F value`
+m8_p_values <- m8_summary$`Pr(>F)` 
+ m8_summary$`F value` <- round( m8_summary$`F value`, digits = 3)
+ m8_summary$`Pr(>F)`<-round( m8_summary$`Pr(>F)`, digits = 3)
+m8_df <- m8_summary[c(1:4),] %>%
+  mutate(FvFm = paste0( `F value`)) %>% 
+  dplyr::select(FvFm) 
+
+#LT
+m9_summary <- as.data.frame(m9_summary[[1]])
+m9_F_values <- m9_summary$`F value`
+m9_p_values <- m9_summary$`Pr(>F)` 
+ m9_summary$`F value` <- round( m9_summary$`F value`, digits = 3)
+ m9_summary$`Pr(>F)`<-round( m9_summary$`Pr(>F)`, digits = 3)
+m9_df <- m9_summary[c(1:4),] %>%
+  mutate(LT= paste0( `F value`)) %>% 
+  dplyr::select(LT) 
+
+#LA
+m10_summary <- as.data.frame(m10_summary[[1]])
+m10_F_values <- m10_summary$`F value`
+m10_p_values <- m10_summary$`Pr(>F)` 
+ m10_summary$`F value` <- round( m10_summary$`F value`, digits = 3)
+ m10_summary$`Pr(>F)`<-round( m10_summary$`Pr(>F)`, digits = 3)
+m10_df <- m10_summary[c(1:4),] %>%
+  mutate(LA= paste0( `F value`)) %>% 
+  dplyr::select(LA)
+
+#SLA
+m11_summary <- as.data.frame(m11_summary[[1]])
+m11_F_values <- m11_summary$`F value`
+m11_p_values <- m11_summary$`Pr(>F)` 
+ m11_summary$`F value` <- round( m11_summary$`F value`, digits = 3)
+ m11_summary$`Pr(>F)`<-round( m11_summary$`Pr(>F)`, digits = 3)
+m11_df <- m11_summary[c(1:4),] %>%
+  mutate(SLA= paste0( `F value`)) %>% 
+  dplyr::select(SLA)
+
+#Total_LA
+m12_summary <- as.data.frame(m12_summary[[1]])
+m12_F_values <- m12_summary$`F value`
+m12_p_values <- m12_summary$`Pr(>F)` 
+ m12_summary$`F value` <- round( m12_summary$`F value`, digits = 3)
+ m12_summary$`Pr(>F)`<-round( m12_summary$`Pr(>F)`, digits = 3)
+m12_df <- m12_summary[c(1:4),] %>%
+  mutate(Total_LA= paste0( `F value`)) %>% 
+  dplyr::select(Total_LA)
+
+#height
+m13_summary <- as.data.frame(m13_summary[[1]])
+m13_F_values <- m13_summary$`F value`
+m13_p_values <- m13_summary$`Pr(>F)` 
+ m13_summary$`F value` <- round( m13_summary$`F value`, digits = 3)
+ m13_summary$`Pr(>F)`<-round( m13_summary$`Pr(>F)`, digits = 3)
+m13_df <- m13_summary[c(1:4),] %>%
+  mutate(Height= paste0( `F value`)) %>% 
+  dplyr::select(Height)
+
+#Diameter
+m14_summary <- as.data.frame(m14_summary[[1]])
+m14_F_values <- m14_summary$`F value`
+m14_p_values <- m14_summary$`Pr(>F)` 
+ m14_summary$`F value` <- round( m14_summary$`F value`, digits = 3)
+ m14_summary$`Pr(>F)`<-round( m14_summary$`Pr(>F)`, digits = 3)
+m14_df <- m14_summary[c(1:4),] %>%
+  mutate(Diameter= paste0( `F value`)) %>% 
+  dplyr::select(Diameter)
+
+#Rootshoot
+m15_summary <- as.data.frame(m15_summary[[1]])
+m15_F_values <- m15_summary$`F value`
+m15_p_values <- m15_summary$`Pr(>F)` 
+ m15_summary$`F value` <- round( m15_summary$`F value`, digits = 3)
+ m15_summary$`Pr(>F)`<-round( m15_summary$`Pr(>F)`, digits = 3)
+m15_df <- m15_summary[c(1:4),] %>%
+  mutate(Rootshoot= paste0( `F value`)) %>% 
+  dplyr::select(Rootshoot)
+
+# Combine m1_df and m2_df
+combined_df <- cbind(m1_df, m2_df, m3_df, m4_df, m5_df, m6_df, m7_df, m8_df, m9_df, m10_df, m11_df, m12_df, m13_df, m14_df, m15_df)
+
+write.csv(x = combined_df, file = "linear_models_recovery.csv")
+
+```
+#PCA + MANOVA
+##Drought
+*Scaling* a vector involves division by its standard deviation to have a standard deviation of one.
+
+*Centering* a vector means subtracting its average value from all the values. As a result the vector has a zero mean.
+
+*Standardizing* a vector means subtracting the vector mean and dividing by its standard deviation. Other words, scaling +centering = standardizing.
+```{r}
+# prepare data for pca
+Data <- Global_DRYER$trait_data 
+DATHDl <- Global_DRYER$HDLW_data
+Data <- left_join(Data, DATHDl)
+
+Data <- Data %>%
+  mutate(Treatment = case_when(
+    Time == "t0" & Treatment %in% c("D1", "D2", "D3") ~ "C0",
+    TRUE ~ Treatment
+  ))
+
+Data_PCA <- Data %>% 
+  dplyr::select(-UniqueCode) %>%
+   group_by(Time, Treatment, Species) %>% summarise_each(funs(mean(., na.rm = TRUE))) %>%
+   dplyr::select(-Comment_D, -Comment) %>%
+   dplyr::select(Time, Treatment, Species, 
+       Asat ,gs, E, WUE, RWC, Pmidday , Chloro , FvFm , LT , LA_rwc , SLA, TotalLeafSurface, Height, Diameter, RootShoot) %>% rename(LA = LA_rwc, Total_LA = TotalLeafSurface)
+
+Drought <- Data_PCA %>%
+  filter(Time %in% c("t21", "t27", "t71")) %>%
+  dplyr::select(-Pmidday) #%>%
+ # filter(Treatment != "C0")
+
+ellipse_colors <- c(D1 = "#8CB425", D2 = "#ECE320", D3 = "#DF5220", C0 = "#219ebc")
+
+Drought_sd <- decostand(Drought[,c(4:17)], method = "standardize") #Standardize traits
+
+Drought <- Drought %>%
+  mutate(label = ifelse(Species == "Epe.fal", "E. falcata", 
+                        ifelse(Species == "Iry.hos", "I. hostmannii", 
+                               ifelse(Species == "Jac.cop", "J. copaia", 
+                                      ifelse(Species == "Pte.off","P. officinalis",
+                                             ifelse(Species == "Sym.off", "S. globulifera",
+                                                    ifelse(Species == "Tac.mel", "T. melinonii",
+                                                           ifelse(Species == "Vir.sur", "V. surinamensis", NA)))))))) %>%
+  select(-Species) %>%
+  rename(Species = label)
+PCA <- autoplot(princomp(~ RWC + LT + RootShoot + Chloro + WUE + E+ gs + FvFm + Asat + SLA + Total_LA + LA + Height + Diameter + RootShoot, 
+                         data = Drought_sd, 
+                         cor = T), 
+                data = Drought,
+                colour = "Treatment",
+                alpha = 0.7,
+                size = 10,
+                shape = "Species",
+                loadings = TRUE,
+                loadings.label = TRUE,
+                loadings.label.repel = TRUE,
+                loadings.label.colour = 'black',
+                loadings.colour = 'black',
+                loadings.label.size = 10) +
+  geom_hline(aes(yintercept = 0), col = 'black', linetype = "dotted") +
+  geom_vline(aes(xintercept = 0), col = 'black', linetype = "dotted") +
+  scale_color_manual("Species", values = c("#009E72", "#56B4E9", "#E79F02")) +
+  scale_shape_manual("Species", values = c(0 ,2, 3, 7 ,8, 19, 15)) + 
+  stat_ellipse(aes(col = Treatment), level = 0.85, size = 1.2, show.legend =FALSE) +
+  scale_color_manual("ellipse", values = ellipse_colors) +
+  guides(color = guide_legend(title = "Treatment",
+                              title.position = "top",
+                              nrow = 2,
+                              override.aes = list(size = 10)),
+         shape = guide_legend(override.aes = list(size = 10))) +
+  theme(legend.position = "bottom", legend.text = element_text(face= "italic"))+
+  ggtitle("Drought Resistance")+
+  theme(title = element_text(face = "Bold"))+
+  theme_classic(base_size = 26) 
+PCA
+
+
+#contribution to axes
+#pca calculation
+res.pca<-PCA(Drought_sd, scale.unit=T, ncp=5, graph=F) #Standardize traits
+#Contributions of variables to PC1
+axe1 <- fviz_contrib(res.pca, choice = "var", axes = 1, top = 10)
+
+#Contributions of variables to PC2
+axe2 <- fviz_contrib(res.pca, choice = "var", axes = 2, top = 10)
+
+#Contributions of variables to PC3
+axe3 <- fviz_contrib(res.pca, choice = "var", axes = 3, top = 10)
+
+#Contributions of variables to PC4
+axe4 <- fviz_contrib(res.pca, choice = "var", axes = 4, top = 10)
+
+#arrange into one figure
+axes_constribution <- ggpubr::ggarrange(
+  axe1,
+  axe2,
+  axe3,
+  axe4, 
+  labels = c("A", "B", "C", "D"),
+  common.legend = T,
+  legend = 'none',
+  nrow= 4, ncol=1)
+axes_constribution 
+ggsave(filename = "axes_contribution.png", plot = axes_constribution, bg = "white", width = 10, height = 10, dpi = 600)
+
+# PERMANOVA, (permutational multivariate ANOVA), is a non-parametric alternative to MANOVA, or multivariate ANOVA test. It is appropriate with multiple sets of variables that do not meet the assumptions of MANOVA, namely multivariate normality.
+
+# Null hypothesis: Groups do not differ/ are equivalent in spread or position multivariate space.
+
+# Permutational Manova analysis and post-hoc pairwise analysis.
+
+#MANOVA
+res.pca<-PCA(Drought_sd, scale.unit=T, ncp=5, graph=F)
+res.pca.ind<-get_pca_ind(res.pca)
+m<-manova(res.pca.ind$coord ~ Drought$Treatment) 
+m
+summary.aov(m)
+
+#PERMANOVA:
+pm <- adonis2(res.pca.ind$coord ~ Drought$Treatment, permutations = 999, method = "euclidean")
+pm
+
+Dim<- as.data.frame(res.pca.ind$coord)
+
+pm_dm1 <- adonis2(res.pca.ind$coord ~ Dim$Dim.1, permutations = 999, method = "euclidean")
+pm_dm1
+
+pm_dm2 <- adonis2(res.pca.ind$coord ~ Dim$Dim.2, permutations = 999, method = "euclidean")
+pm_dm2
+
+#P-value (0.001) *** is significant so our group types in pm have different means.
+
+#Process a pairwise analyse to detect which treatments are different from each other.
+pairwise_adonis_treatment <- pairwise.adonis(res.pca.ind$coord,Drought$Treatment, sim.method = "euclidean")
+
+pairwise_adonis_type_table <- pairwise_adonis_treatment %>%
+  relocate(pairs, .after = sig) %>%
+  kbl(caption = "Functional differences between treatments",digits =3) %>%
+  kable_classic(full_width = F, html_font = "Cambria") %>%
+  save_kable(file = "Functional differences between treatments.jpeg", zoom = 5)
+
+# Now, add the annotation to the plot
+PCA_with_annotation <- PCA +
+  annotate("text", x = Inf, y = Inf, hjust = 1, vjust = 0.8, label = "Treatment          ", size = 5) +
+  annotate("text", x = Inf, y = Inf, hjust = 1, vjust = 2, label = "Comp.1: F = 26.78***", size = 5) +
+  annotate("text", x = Inf, y = Inf, hjust = 1, vjust = 3.2, label = "Comp.2: F = 14.23***", size = 5)
+
+PCA_with_annotation
+
+```
+
+##Recovery
+```{r}
+# prepare data for pca
+Data <- Global_DRYER$trait_data 
+DATHDl <- Global_DRYER$HDLW_data
+Data <- left_join(Data, DATHDl)
+
+Data <- Data %>% mutate(Treatment = ifelse(Treatment == "D1", "Recovery from D1", ifelse(Treatment == "D2", "Recovery from D2", ifelse(Treatment == "D3", "Recovery from D3", "C0")))) 
+
+
+Data_PCA <- Data %>% 
+  dplyr::select(-UniqueCode) %>%
+   group_by(Time, Treatment, Species) %>% summarise_each(funs(mean(., na.rm = TRUE))) %>%
+   dplyr::select(-Comment_D, -Comment) %>%
+   dplyr::select(Time, Treatment, Species, 
+       Asat ,gs, E, WUE, RWC, Pmidday , Chloro , FvFm , LT , LA_rwc , SLA, TotalLeafSurface, Height, Diameter, RootShoot) %>% rename(LA = LA_rwc, Total_LA = TotalLeafSurface)
+
+Recovery <- Data_PCA %>%
+  filter(Time %in% c("t51", "t57", "t101")) %>%
+  dplyr::select(-Pmidday) 
+
+ellipse_colors <- c(`Recovery from D1` = "#8CB425",`Recovery from D2` = "#ECE320", `Recovery from D3` = "#DF5220", C0 = "#219ebc")
+
+Recovery <- Recovery %>%
+  mutate(label = ifelse(Species == "Epe.fal", "E. falcata", 
+                        ifelse(Species == "Iry.hos", "I. hostmannii", 
+                               ifelse(Species == "Jac.cop", "J. copaia", 
+                                      ifelse(Species == "Pte.off","P. officinalis",
+                                             ifelse(Species == "Sym.off", "S. globulifera",
+                                                    ifelse(Species == "Tac.mel", "T. melinonii",
+                                                           ifelse(Species == "Vir.sur", "V. surinamensis", NA)))))))) %>%
+  dplyr::select(-Species) %>%
+  rename(Species = label) 
+
+Recovery_sd <- decostand(Recovery[,c(3:16)], method = "standardize") #Standardize traits
+
+
+PCA_recovery <- autoplot(princomp(~ RWC + LT + RootShoot + Chloro + WUE + E+ gs + FvFm + Asat + SLA + Total_LA + LA + Height + Diameter + RootShoot, 
+                         data = Recovery_sd, 
+                         cor = T), 
+                data = Recovery,
+                colour = "Treatment",
+                alpha = 0.7,
+                size = 10,
+                shape = "Species",
+                loadings = TRUE,
+                loadings.label = TRUE,
+                loadings.label.repel = TRUE,
+                loadings.label.colour = 'black',
+                loadings.colour = 'black',
+                loadings.label.size = 10) +
+  geom_hline(aes(yintercept = 0), col = 'black', linetype = "dotted") +
+  geom_vline(aes(xintercept = 0), col = 'black', linetype = "dotted") +
+   scale_color_manual("Treatment", values =c(`Recovery from D1` = "#8CB425", `Recovery from D2` = "#ECE320", `Recovery from D3`= "#DF5220", C0 = "#219ebc"))+  
+  scale_shape_manual("Species", values = c(0 ,2, 3, 7 ,8, 19, 15)) + 
+  stat_ellipse(aes(col = Treatment), level = 0.85, size = 1.2, show.legend =FALSE) +
+  scale_color_manual("ellipse", values = ellipse_colors) +
+  guides(color = guide_legend(title = "Treatment",
+                              title.position = "top",
+                              nrow = 4,
+                              override.aes = list(size = 10)),
+         shape = guide_legend(override.aes = list(size = 10), legend.text = element_text(face= "italic"))) +
+  theme(legend.position = "right", legend.direction = "vertical", legend.text = element_text(face= "italic"))+
+  ggtitle("Recovery")+
+  theme(title = element_text(face = "Bold"))+
+  theme_classic(base_size = 26)
+
+
+PCA_recovery
+
+
+#contribution to axes
+#pca calculation
+res.pca<-PCA(Recovery_sd, scale.unit=T, ncp=5, graph=F) #Standardize traits
+#Contributions of variables to PC1
+axe1 <- fviz_contrib(res.pca, choice = "var", axes = 1, top = 10)
+
+#Contributions of variables to PC2
+axe2 <- fviz_contrib(res.pca, choice = "var", axes = 2, top = 10)
+
+#Contributions of variables to PC3
+axe3 <- fviz_contrib(res.pca, choice = "var", axes = 3, top = 10)
+
+#Contributions of variables to PC4
+axe4 <- fviz_contrib(res.pca, choice = "var", axes = 4, top = 10)
+
+#arrange into one figure
+axes_constribution <- ggpubr::ggarrange(
+  axe1,
+  axe2,
+  axe3,
+  axe4, 
+  labels = c("A", "B", "C", "D"),
+  common.legend = T,
+  legend = 'none',
+  nrow= 4, ncol=1)
+axes_constribution 
+ggsave(filename = "axes_contribution_recovery.png", plot = axes_constribution, bg = "white", width = 10, height = 10, dpi = 600)
+
+# PERMANOVA, (permutational multivariate ANOVA), is a non-parametric alternative to MANOVA, or multivariate ANOVA test. It is appropriate with multiple sets of variables that do not meet the assumptions of MANOVA, namely multivariate normality.
+
+# Null hypothesis: Groups do not differ/ are equivalent in spread or position multivariate space.
+
+# Permutational Manova analysis and post-hoc pairwise analysis.
+
+#MANOVA
+res.pca<-PCA(Recovery_sd, scale.unit=T, ncp=5, graph=F)
+res.pca.ind<-get_pca_ind(res.pca)
+r<-manova(res.pca.ind$coord ~ Recovery$Treatment) 
+r
+summary.aov(r)
+
+#PERMANOVA:
+pm_r <- adonis2(res.pca.ind$coord ~ Recovery$Treatment, permutations = 999, method = "euclidean")
+pm_r #F=1.36 ns
+
+
+pm_r %>%
+  kbl(caption = "Functional differences between treatments during recovery",digits =3) %>%
+  kable_classic(full_width = F, html_font = "Cambria") %>%
+  save_kable(file = "Functional differences between treatments during recovery.jpeg", zoom = 5)
+#P-value is not significant so our group types don't have different means.
+
+```
+
+##combine drought and recovery
+```{r}
+ggarrange(PCA, PCA_recovery, ncol = 2, nrow = 1, common.legend = TRUE, labels = c("A", "B"),font.label = list(size=26), legend = "bottom")
+```
+
+#Trait DRYER natura
+
+```{r}
+#get authorization 
+googlesheets4::gs4_auth(scopes = "https://www.googleapis.com/auth/spreadsheets.readonly" )
+
+traits <- googlesheets4::read_sheet("https://docs.google.com/spreadsheets/d/13NVmdKXHo6wZKErSje-4_Iv8C-6uHz_KuBTiUL6oifE/edit#gid=1174632153", sheet = "traits") 
+#add gmin
+
+gmin <- googlesheets4::read_sheet("https://docs.google.com/spreadsheets/d/13NVmdKXHo6wZKErSje-4_Iv8C-6uHz_KuBTiUL6oifE/edit#gid=1174632153", sheet = "gmin") %>% dplyr::select(Code, gmin)
+
+traits <- traits %>% left_join(gmin, by = "Code")
+
+traits <- traits %>% rename(code = Code)
+traits$code <- as.character(traits$code)
+
+#remove gmin >10 which is not coherent to previous work (it's a sunflower).
+
+traits$Genus[which(traits$gmin >10)]
+traits$code[which(traits$gmin >10)]
+
+traits$gmin[which(traits$code == "5")] <- NA
+
+# To get SLA
+data_SLA <- googlesheets4::read_sheet("https://docs.google.com/spreadsheets/d/13NVmdKXHo6wZKErSje-4_Iv8C-6uHz_KuBTiUL6oifE/edit#gid=27160926", range = "LA") %>% dplyr::select (Code, LA_rwc) %>% rename(code = Code, LeafArea_rwc = LA_rwc)
+data_SLA$code <- as.character(data_SLA$code)
+
+data_SLA <- traits %>% dplyr::select(code, LeafDW) %>% left_join(data_SLA)
+
+data_SLA <- data_SLA %>% mutate(SLA = LeafArea_rwc/LeafDW)
+
+data_SLA <- data_SLA %>% dplyr::select(code, SLA) 
+
+traits <- left_join(traits, data_SLA, by= "code")
+
+```
+
+```{r}
+
+library(ggplot2)
+
+tlp <- traits %>%
+  mutate(Name2 = paste0(substr(traits$Genus, 1, 1), ".", Species)) %>%
+ggplot() +
+ aes(x = Name, y = TLP, fill = Name2) +
+ geom_boxplot(alpha =0.6) +
+  geom_jitter(alpha=0.6)+
+ scale_fill_hue(direction = 1) +
+ labs(y = "TLP (MPa)", x ="") +
+ theme_minimal()+
+  theme(axis.text.x=element_blank(), legend.text = element_text(face= "italic"))+
+  guides(fill=guide_legend(title="Species"))
+
+gmin <- traits %>%
+  mutate(Name2 = paste0(substr(traits$Genus, 1, 1), ".", Species)) %>%
+ggplot() +
+ aes(x = Name, y = gmin, fill = Name2) +
+ geom_boxplot(alpha =0.6) +
+  geom_jitter(alpha=0.6)+
+ scale_fill_hue(direction = 1) +
+ labs(y = "gmin (mmol.m².s-1)", x="") +
+  theme_minimal()+
+  theme(axis.text.x=element_blank(), legend.text = element_text(face= "italic"))+
+  guides(fill=guide_legend(title="Species"))
+
+sd <- traits %>%
+  mutate(Name2 = paste0(substr(traits$Genus, 1, 1), ".", Species)) %>%
+ggplot() +
+ aes(x = Name, y = StomatalDensity, fill = Name2) +
+ geom_boxplot(alpha =0.6) +
+  geom_jitter(alpha=0.6)+
+ scale_fill_hue(direction = 1) +
+ labs(y = "SD (mm-2)", x="") +
+  theme_minimal()+
+  theme(axis.text.x=element_blank(), legend.text = element_text(face= "italic"))+
+  guides(fill=guide_legend(title="Species"))
+
+ traits %>%
+  mutate(Name2 = paste0(substr(traits$Genus, 1, 1), ".", Species)) %>%
+ggplot() +
+ aes(x = Name, y = LSWC, fill = Name2) +
+ geom_boxplot(alpha =0.6) +
+  geom_jitter(alpha=0.6)+
+ scale_fill_hue(direction = 1) +
+ labs(y = "LSWC (%)", x="") +
+  theme_minimal()+
+  theme(axis.text.x=element_blank(), legend.text = element_text(face= "italic"))+
+  guides(fill=guide_legend(title="Species"))
+
+
+extra_trait <- ggarrange(tlp, gmin, sd, nrow=1, common.legend = T, legend= "right")
+
+extra_trait 
+
+ggsave(filename = "extra_natura_for_GH_traits.jpeg", plot = extra_trait, width = 9, height = 4)
+```
+
+#Asat plot
+```{r}
+Data <- Global_DRYER$trait_data 
+DATHDl <- Global_DRYER$HDLW_data
+
+Data <- left_join(Data, DATHDl)
+
+names(Data)
+
+Data <- Data %>%  
+  dplyr::select(-Comment_D, -Comment) %>% dplyr::select(Time, Treatment, Species, 
+       Asat ,gs, E, WUE, RWC, Pmidday , Chloro , FvFm , LT , LA_rwc , SLA, TotalLeafSurface, Height, Diameter, RootShoot) %>% rename(LA = LA_rwc, Total_LA = TotalLeafSurface)
+
+Data <- Data %>%
+  mutate(Treatment = case_when(
+    Time == "t0" & Treatment %in% c("D1", "D2", "D3") ~ "C0",
+    TRUE ~ Treatment
+  ))
+
+  
+melted_data <- melt(Data, id.vars = c("Species", "Treatment", "Time"))
+melted_data$Time <- factor(melted_data$Time, levels = c("t0", "t21", "t27", "t51", "t57", "t71", "t101"))
+
+Asat <- melted_data %>% filter(variable == "Asat") %>% filter(Time %in% c("t0", "t21", "t27", "t71"))
+
+#plot
+
+Asat2 <- Asat %>%
+  group_by(Species, Treatment) %>%
+  summarise( n=n(), mean_asat= mean(value, na.rm=T), sd_asat= sd(value, na.rm=T)) %>%
+  mutate(se_asat= sd_asat/sqrt(n))
+
+Asat_plot <- Asat2 %>%
+mutate(label = ifelse(Species == "Epe.fal", "E. falcata", 
+                        ifelse(Species == "Iry.hos", "I. hostmannii", 
+                               ifelse(Species == "Jac.cop", "J. copaia", 
+                                      ifelse(Species == "Pte.off","P. officinalis",
+                                             ifelse(Species == "Sym.off", "S. globulifera",
+                                                    ifelse(Species == "Tac.mel", "T. melinonii",
+                                                           ifelse(Species == "Vir.sur", "V. surinamensis", NA)))))))) %>%
+ggplot() +
+    geom_errorbar( aes(x=Treatment, ymin=mean_asat-se_asat, ymax=mean_asat+se_asat,  group = Treatment), width=0.4, colour="black", alpha=0.9, size=0.3,    position = position_dodge(width = 0.9))+
+  geom_col(mapping = aes(x = Treatment, y = mean_asat, group = Treatment, fill = Treatment), colour = "black", position = "dodge", alpha=0.6)+
+ theme_minimal(base_size = 14)+
+ scale_fill_manual("Treatment", values =c(D1 = "#8CB425", D2 = "#ECE320", D3 = "#DF5220", C0 = "#219ebc"))+
+ labs(y=expression(paste("Asat \n (µmol.m-2.s-1)")), x="")+
+ # theme(axis.text.x = element_text(face="italic"))+
+  facet_wrap(~label, nrow = 1)+
+    theme(strip.text = element_text(face = "italic"),axis.title.x = element_blank(), plot.margin = margin(l = 16, r=10))+
+  guides(fill= "none")
+Asat_plot
+```
+
+#Pmidday plot
+```{r}
+Data <- Global_DRYER$trait_data 
+DATHDl <- Global_DRYER$HDLW_data
+
+Data <- left_join(Data, DATHDl)
+
+names(Data)
+
+Data <- Data %>%  
+  dplyr::select(-Comment_D, -Comment) %>% dplyr::select(Time, Treatment, Species, 
+       Asat ,gs, E, WUE, RWC, Pmidday , Chloro , FvFm , LT , LA_rwc , SLA, TotalLeafSurface, Height, Diameter, RootShoot) %>% rename(LA = LA_rwc, Total_LA = TotalLeafSurface)
+
+Data <- Data %>%
+  mutate(Treatment = case_when(
+    Time == "t0" & Treatment %in% c("D1", "D2", "D3") ~ "C0",
+    TRUE ~ Treatment
+  ))
+
+  
+melted_data <- melt(Data, id.vars = c("Species", "Treatment", "Time"))
+melted_data$Time <- factor(melted_data$Time, levels = c("t0", "t21", "t27", "t51", "t57", "t71", "t101"))
+
+Pmidday <- melted_data %>% filter(variable == "Pmidday") %>% filter(Time %in% c("t0", "t21", "t27", "t71"))
+
+#plot
+Pmidday_plot <- Pmidday %>%
+mutate(label = ifelse(Species == "Epe.fal", "E. falcata", 
+                        ifelse(Species == "Iry.hos", "I. hostmannii", 
+                               ifelse(Species == "Jac.cop", "J. copaia", 
+                                      ifelse(Species == "Pte.off","P. officinalis",
+                                             ifelse(Species == "Sym.off", "S. globulifera",
+                                                    ifelse(Species == "Tac.mel", "T. melinonii",
+                                                           ifelse(Species == "Vir.sur", "V. surinamensis", NA)))))))) %>%
+ggplot() +
+  geom_boxplot(mapping = aes(x = Treatment, y =value, group = Treatment, fill = Treatment), colour = "black", alpha=0.6)+
+ theme_minimal(base_size = 14)+
+ scale_fill_manual("Treatment", values =c(D1 = "#8CB425", D2 = "#ECE320", D3 = "#DF5220", C0 = "#219ebc"))+
+ labs(y= expression(paste("Pmidday \n (MPa)")), x="")+
+  facet_wrap(~label, nrow = 1)+
+    theme(panel.border = element_rect(color="gray", fill=NA),strip.text = element_text(face = "italic"),strip.background = element_blank(),
+  strip.text.x = element_blank(), axis.text.x = element_blank(), plot.margin = margin(l = 16, r=10))+
+  guides(alpha="none", fill="none")
+Pmidday_plot
+```
+
+
+#gs
+```{r}
+Data <- Global_DRYER$trait_data 
+
+Data$Time <- factor(Data$Time, levels = c("t0","t8", "t14", "t21", "t27", "t51", "t57", "t71", "t101"))
+
+gs_data <- Data %>% dplyr::select(UniqueCode, Species, Treatment, Time, gs) %>%
+mutate(label = ifelse(Species == "Epe.fal", "E. falcata", 
+                        ifelse(Species == "Iry.hos", "I. hostmannii", 
+                               ifelse(Species == "Jac.cop", "J. copaia", 
+                                      ifelse(Species == "Pte.off","P. officinalis",
+                                             ifelse(Species == "Sym.off", "S. globulifera",
+                                                    ifelse(Species == "Tac.mel", "T. melinonii",
+                                                           ifelse(Species == "Vir.sur", "V. surinamensis", NA)))))))) 
+
+gs_data$Time <-  gsub(pattern = "t", replacement = "", x = gs_data$Time)
+gs_data$Time<- factor(gs_data$Time, levels = c("0","8", "14", "21", "27", "51", "57", "71", "101"))
+
+#calcul error bars
+gs <- gs_data %>%
+  mutate(Treatment2 = case_when(
+    Time == "0" ~ "initial",
+    Time != "0" & Treatment == "C0" ~ "Control",
+    TRUE ~ "Drought"  # Default case
+  ))
+
+gs_data <- gs %>%
+  group_by(label, Time, Treatment2) %>%
+  summarise( n=n(), mean_gs= mean(gs, na.rm=T), sd_gs= sd(gs, na.rm=T)) %>%
+  mutate(se_gs= sd_gs/sqrt(n))
+
+gs_plot <- gs_data %>%
+ filter(!Time %in% c("51", "57", "101")) %>%
+ ggplot() +
+  aes(x = Time, y = mean_gs, colour = Treatment2) +
+  geom_point(shape = "circle", size = 4) +
+   geom_errorbar( aes(x=Time, ymin=mean_gs-se_gs, ymax=mean_gs+se_gs,  group = Time), width=0.4, colour="black", alpha=0.9, size=0.3,    position = position_dodge(width = 0.9))+
+ scale_color_manual("Treatment", values =c(initial = "red", Drought="grey", Control = "#219ebc"))+
+  theme_minimal(base_size = 14) +
+  theme(axis.text.x = element_text(size = 10))+
+  facet_wrap(vars(label), nrow = 1)+
+  theme(panel.border = element_rect(color="gray", fill=NA),strip.text = element_text(face = "italic"),strip.background = element_blank(),
+  strip.text.x = element_blank(),  plot.margin = margin(l = 16, r=10))+
+  labs(y= expression(paste("gs \n (mmol.m-2.s-1)")), x="")+
+  guides(color="none")
+gs_plot 
+```
+
+
+#AGR: absolute growth rate
+```{r}
+DATHDl <- Global_DRYER$HDLW_data
+
+#At t21
+
+A <- DATHDl %>%
+  dplyr::select(Time, Treatment, Species, UniqueCode, Diameter)
+
+diameter_wider2 <- A %>% 
+  pivot_wider(
+    id_cols = c("UniqueCode", "Species", "Treatment"),
+    names_from = c("Time"),
+    values_from = Diameter
+  )
+
+diameter_wider <- diameter_wider2 %>% mutate(
+  D_21 = t21-t0/21,
+  D_27 = t27-t0/27,
+  D_71 = t71-t0/71,
+  D_51 = t51-t21/30,
+  D_57 = t57-t27/30,
+  D_101 = t101-t71/30
+) %>%
+  dplyr::select(UniqueCode, Species, Treatment,D_21,
+  D_27,  D_71,  D_51,  D_57,  D_101)
+
+diameter_long <- diameter_wider %>%
+  pivot_longer(cols = c(D_21, D_27, D_71, D_51, D_57, D_101), names_to = "AGR")
+
+#test
+
+diameter_long$Species <- as.factor(diameter_long$Species)
+diameter_long$Treatment <- as.factor(diameter_long$Treatment)
+
+AGR_21 <- diameter_long %>% filter(AGR == "D_21") %>% na.omit(value)
+AGR_27 <- diameter_long %>% filter(AGR == "D_27") %>% na.omit(value)
+AGR_71 <- diameter_long %>% filter(AGR == "D_71") %>% na.omit(value)
+
+anova_agr_21 <- aov(value ~Species +Treatment + Species:Treatment, data= AGR_21)
+anova_agr_27 <- aov(value ~Species +Treatment + Species:Treatment, data= AGR_27)
+anova_agr_71 <- aov(value ~Species +Treatment + Species:Treatment, data= AGR_71)
+
+summary(anova_agr_21)
+summary(anova_agr_27)
+summary(anova_agr_71)
+
+plot(anova_agr_21)
+plot(anova_agr_27)
+plot(anova_agr_71)
+
+#plot
+diameter_long$RGR <- factor(diameter_long$AGR, levels = c("D_21", "D_27", "D_71", "D_51", "D_57", "D_101"))
+
+AGR_plot <- diameter_long %>%
+   filter(!is.na(value) & is.finite(value)) %>%
+   filter(!(AGR %in% c("D_51", "D_57", "D_101"))) %>%
+  mutate(label = ifelse(Species == "Epe.fal", "Ef", 
+                        ifelse(Species == "Iry.hos", "Ih", 
+                               ifelse(Species == "Jac.cop", "Jc", 
+                                      ifelse(Species == "Pte.off","Po",
+                                             ifelse(Species == "Sym.off", "Sg",
+                                                    ifelse(Species == "Tac.mel", "Tm",
+                                                           ifelse(Species == "Vir.sur", "Vs", NA)))))))) %>%
+ggplot() +
+  aes(x = label, y = value, fill = Treatment) +
+  geom_boxplot(alpha=0.6) +
+ scale_fill_manual("Treatment", values =c(D1 = "#8CB425", D2 = "#ECE320", D3 = "#DF5220", C0 = "#219ebc"))+
+  labs(y= expression(paste("AGR \n (mm.d-1)")), x= "")+
+  theme_minimal(base_size = 16) +
+  facet_wrap(vars(AGR))+
+  theme(
+    panel.border = element_rect(color="black", fill=NA),
+  strip.background = element_blank(),
+  strip.text.x = element_blank(),
+  axis.text.x = element_text(angle=0, face= 'italic'),
+   plot.margin = margin(l = 15)
+)+
+  stat_compare_means(label = "p.signif", method = "t.test")    
+AGR_plot
+```
+
+#fvfm
+```{r}
+Data <- Data  %>% dplyr::select(Time, Treatment, Species, 
+       Asat ,gs, E, WUE, RWC, Pmidday , Chloro , FvFm , LT , SLA, RootShoot) 
+
+Data <- Data %>%
+  mutate(Treatment = case_when(
+    Time == "t0" & Treatment %in% c("D1", "D2", "D3") ~ "C0",
+    TRUE ~ Treatment
+  ))
+
+  
+melted_data <- melt(Data, id.vars = c("Species", "Treatment", "Time"))
+melted_data$Time <- factor(melted_data$Time, levels = c("t0", "t21", "t27", "t51", "t57", "t71", "t101"))
+
+FvFm <- melted_data %>% filter(variable == "FvFm") %>% filter(Time %in% c("t0", "t21", "t27", "t71"))
+
+#plot
+
+FvFm2 <- FvFm %>%
+  group_by(Species, Treatment) %>%
+  summarise( n=n(), mean_FvFm= mean(value, na.rm=T), sd_FvFm= sd(value, na.rm=T)) %>%
+  mutate(se_FvFm= sd_FvFm/sqrt(n))
+
+FvFm_plot <- FvFm2 %>%
+mutate(label = ifelse(Species == "Epe.fal", "E. falcata", 
+                        ifelse(Species == "Iry.hos", "I. hostmannii", 
+                               ifelse(Species == "Jac.cop", "J. copaia", 
+                                      ifelse(Species == "Pte.off","P. officinalis",
+                                             ifelse(Species == "Sym.off", "S. globulifera",
+                                                    ifelse(Species == "Tac.mel", "T. melinonii",
+                                                           ifelse(Species == "Vir.sur", "V. surinamensis", NA)))))))) %>%
+ggplot() +
+    geom_errorbar( aes(x=Treatment, ymin=mean_FvFm-se_FvFm, ymax=mean_FvFm+se_FvFm,  group = Treatment), width=0.4, colour="black", alpha=0.9, size=0.3,    position = position_dodge(width = 0.9))+
+  geom_col(mapping = aes(x = Treatment, y = mean_FvFm, group = Treatment, fill = Treatment), colour = "black", position = "dodge", alpha=0.6)+
+ theme_minimal(base_size = 14)+
+ scale_fill_manual("Treatment", values =c(D1 = "#8CB425", D2 = "#ECE320", D3 = "#DF5220", C0 = "#219ebc"))+
+ labs(y=expression(paste("FvFm \n  ")), x="")+
+ # theme(axis.text.x = element_text(face="italic"))+
+  facet_wrap(~label, nrow = 1)+
+    theme(strip.text = element_text(face = "italic"),strip.background = element_blank(),
+  strip.text.x = element_blank(), plot.margin = margin(l = 16, r=10), axis.text.x = element_blank())+
+  guides(fill= "none")
+```
+
+
+
+```{r}
+drought_trait <- ggarrange(Asat_plot, FvFm_plot, Pmidday_plot, gs_plot,  nrow= 4)
+
+ggsave(filename = "./results/ecophysio/drought_trait.jpeg", plot = drought_trait, width = 8, height = 7)
+```
+
+
+# Resistance 
+
+## function 
+
+```{r}
+# Function to calculate resistance
+
+Resistance <- function(data, trait_name) {
+  resistance_df <- data.frame(Species = character(),
+                              Treatment = character(),
+                              Resistance = numeric(),
+                              SE = numeric(),
+                              stringsAsFactors = FALSE)
+  
+  unique_species <- unique(data$Species)
+  data <- data %>% filter(Treatment != "C0")
+  
+  for (i in unique_species) {
+    species_data <- data[data$Species == i, ]
+    
+    ref <- mean(species_data[[trait_name]][species_data$Treatment == "D1"])
+    treatments <- unique(species_data$Treatment[species_data$Treatment != "D1"])
+    
+    for (j in treatments) {
+      DT <- abs(ref - mean(species_data[[trait_name]][species_data$Treatment == j]))
+      
+      Resistance <- 1 - ((2 * abs(DT)) / (abs(ref) + abs(DT)))
+
+      species_resistance <- data.frame(Species = i,
+                                       Treatment = j,
+                                       Resistance =Resistance,
+                                       stringsAsFactors = FALSE)
+      
+      resistance_df <- rbind(resistance_df, species_resistance)
+      
+    }
+  }
+  
+  resistance_df
+}
+
+
+```
+
+function with C0
+
+```{r}
+# Function to calculate resistance
+
+Resistance_D1 <- function(data, trait_name) {
+  resistance_df <- data.frame(Species = character(),
+                              Treatment = character(),
+                              Resistance = numeric(),
+                              SE = numeric(),
+                              stringsAsFactors = FALSE)
+  data <- data %>% filter(Time == "t21")
+  unique_species <- unique(data$Species)
+  
+  for (i in unique_species) {
+    species_data <- data[data$Species == i, ]
+    
+    ref <- mean(species_data[[trait_name]][species_data$Treatment == "C0"])
+    treatments <- unique(species_data$Treatment[species_data$Treatment != "C0"])
+    
+    for (j in treatments) {
+      DT <- abs(ref - mean(species_data[[trait_name]][species_data$Treatment == j]))
+      
+      Resistance <- 1 - ((2 * abs(DT)) / (abs(ref) + abs(DT)))
+
+      species_resistance <- data.frame(Species = i,
+                                       Treatment = j,
+                                       Resistance =Resistance,
+                                       stringsAsFactors = FALSE)
+      
+      resistance_df <- rbind(resistance_df, species_resistance)
+      
+    }
+  }
+  
+  resistance_df
+}
+
+
+Resistance_D2 <- function(data, trait_name) {
+  resistance_df <- data.frame(Species = character(),
+                              Treatment = character(),
+                              Resistance = numeric(),
+                              SE = numeric(),
+                              stringsAsFactors = FALSE)
+  data <- data %>% filter(Time == "t27")
+  unique_species <- unique(data$Species)
+  
+  for (i in unique_species) {
+    species_data <- data[data$Species == i, ]
+    
+    ref <- mean(species_data[[trait_name]][species_data$Treatment == "C0"])
+    treatments <- unique(species_data$Treatment[species_data$Treatment != "C0"])
+    
+    for (j in treatments) {
+      DT <- abs(ref - mean(species_data[[trait_name]][species_data$Treatment == j]))
+      
+      Resistance <- 1 - ((2 * abs(DT)) / (abs(ref) + abs(DT)))
+
+      species_resistance <- data.frame(Species = i,
+                                       Treatment = j,
+                                       Resistance =Resistance,
+                                       stringsAsFactors = FALSE)
+      
+      resistance_df <- rbind(resistance_df, species_resistance)
+      
+    }
+  }
+  
+  resistance_df
+}
+
+
+Resistance_D3 <- function(data, trait_name) {
+  resistance_df <- data.frame(Species = character(),
+                              Treatment = character(),
+                              Resistance = numeric(),
+                              SE = numeric(),
+                              stringsAsFactors = FALSE)
+  data <- data %>% filter(Time == "t71")
+  unique_species <- unique(data$Species)
+  
+  for (i in unique_species) {
+    species_data <- data[data$Species == i, ]
+    
+    ref <- mean(species_data[[trait_name]][species_data$Treatment == "C0"])
+    treatments <- unique(species_data$Treatment[species_data$Treatment != "C0"])
+    
+    for (j in treatments) {
+      DT <- abs(ref - mean(species_data[[trait_name]][species_data$Treatment == j]))
+      
+      Resistance <- 1 - ((2 * abs(DT)) / (abs(ref) + abs(DT)))
+
+      species_resistance <- data.frame(Species = i,
+                                       Treatment = j,
+                                       Resistance =Resistance,
+                                       stringsAsFactors = FALSE)
+      
+      resistance_df <- rbind(resistance_df, species_resistance)
+      
+    }
+  }
+  
+  resistance_df
+}
+```
+
+## calculation 
+```{r}
+
+Data <- Global_DRYER$trait_data 
+DATHDl <- Global_DRYER$HDLW_data
+Data <- left_join(Data, DATHDl)
+
+Data <- Data %>%
+  mutate(Treatment = case_when(
+    Time == "t0" & Treatment %in% c("D1", "D2", "D3") ~ "C0",
+    TRUE ~ Treatment
+  ))
+
+
+Data <-  Data %>%
+  mutate(Treatment = case_when(
+    Time == "t21" & Treatment %in% c("D1", "D2", "D3") ~ "D1",
+    TRUE ~ Treatment
+  )) %>%
+  filter(Time %in% c("t21", "t27", "t71")) 
+  #%>%
+  #filter(Treatment != "C0") 
+
+
+# Calculate resistance for each trait
+traits <- c("Asat")
+
+resistance_d1 <- data.frame(Species = character(),
+                            Time = character(),
+                                 Trait = character(),
+                                 Treatment = character(),
+                                 Resistance = numeric())
+for (trait in traits) {
+  res_df <- Data %>% dplyr::select(UniqueCode, Species, Treatment, Time, trait) %>% drop_na()
+  res_df <- Resistance_D1(res_df, trait) %>% mutate(Trait = trait)
+  resistance_d1 <- rbind(resistance_d1, res_df)
+}
+
+resistance_d2 <- data.frame(Species = character(),
+                            Time = character(),
+                                 Trait = character(),
+                                 Treatment = character(),
+                                 Resistance = numeric())
+for (trait in traits) {
+  res_df <- Data %>% dplyr::select(UniqueCode, Species, Treatment, Time, trait) %>% drop_na()
+  res_df <- Resistance_D2(res_df, trait) %>% mutate(Trait = trait)
+  resistance_d2 <- rbind(resistance_d2, res_df)
+}
+
+resistance_d3 <- data.frame(Species = character(),
+                            Time = character(),
+                                 Trait = character(),
+                                 Treatment = character(),
+                                 Resistance = numeric())
+for (trait in traits) {
+  res_df <- Data %>% dplyr::select(UniqueCode, Species, Treatment, Time, trait) %>% drop_na()
+  res_df <- Resistance_D3(res_df, trait) %>% mutate(Trait = trait)
+  resistance_d3 <- rbind(resistance_d3, res_df)
+}
+
+all_resistance_df <-rbind(resistance_d1, resistance_d2, resistance_d3)
+
+# Define labels for each species
+species_labels <- c("Epe.fal" = "E. falcata",
+                    "Iry.hos" = "I. hostmannii",
+                    "Jac.cop" = "J. copaia",
+                    "Pte.off" = "P. officinalis",
+                    "Sym.off" = "S. globulifera",
+                    "Tac.mel" = "T. melinonii",
+                    "Vir.sur" = "V. surinamensis")
+
+all_resistance_df$facet_label <- species_labels[all_resistance_df$Species]
+write.csv(all_resistance_df, "resistance_trait.csv")
+```
+
+
+## calculation bis
+```{r}
+
+Data <- Global_DRYER$trait_data 
+DATHDl <- Global_DRYER$HDLW_data
+Data <- left_join(Data, DATHDl)
+
+Data <- Data %>%
+  mutate(Treatment = case_when(
+    Time == "t0" & Treatment %in% c("D1", "D2", "D3") ~ "C0",
+    TRUE ~ Treatment
+  ))
+
+
+Data <-  Data %>%
+  mutate(Treatment = case_when(
+    Time == "t21" & Treatment %in% c("D1", "D2", "D3") ~ "D1",
+    TRUE ~ Treatment
+  )) %>%
+  filter(Time %in% c("t21", "t27", "t71")) 
+  #%>%
+  #filter(Treatment != "C0") 
+
+
+# Calculate resistance for each trait
+traits <- c("Asat")
+
+all_resistance_df <- data.frame(Species = character(),
+                                 Trait = character(),
+                                 Treatment = character(),
+                                 Resistance = numeric())
+for (trait in traits) {
+  res_df <- Data %>% dplyr::select(UniqueCode, Species, Treatment, Time, trait) %>% drop_na()
+  res_df <- Resistance(res_df, trait) %>% mutate(Trait = trait)
+  all_resistance_df <- rbind(all_resistance_df, res_df)
+}
+
+# Define labels for each species
+species_labels <- c("Epe.fal" = "E. falcata",
+                    "Iry.hos" = "I. hostmannii",
+                    "Jac.cop" = "J. copaia",
+                    "Pte.off" = "P. officinalis",
+                    "Sym.off" = "S. globulifera",
+                    "Tac.mel" = "T. melinonii",
+                    "Vir.sur" = "V. surinamensis")
+
+all_resistance_df$facet_label <- species_labels[all_resistance_df$Species]
+write.csv(all_resistance_df, "resistance_trait.csv")
+```
+
+## plots
+```{r}
+
+
+# Plot for each trait
+for (trait in traits) {
+  trait_data <- all_resistance_df %>% filter(Trait == trait)
+  trait_data$facet_label <- species_labels[trait_data$Species]
+  
+  p <- ggplot(trait_data) +
+    aes(x = Treatment, y = Resistance, colour = Treatment) +
+    ylab(paste(trait, "- Resistance index2")) +
+    geom_boxplot() +
+    geom_point(shape = "circle", color = "black", size = 4L, alpha = 0.4) +
+    scale_color_manual(values = c(D2 = "#ECE320", D3 = "#DF5220")) +
+    geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+    theme_minimal(base_size = 20)+
+    theme(strip.text = element_text(face = "italic")) +
+    facet_wrap(vars(facet_label))+
+    ylim(c(-1,1.2))
+    
+  
+  # Display the plot
+  ggsave(filename = paste(trait, "Resistance.jpeg"), plot = p, width = 9, height = 7)
+  
+}
+
+#plot together 
+Asat <- 
+  all_resistance_df %>%
+  filter(Trait == "Asat")%>%
+  ggplot() +
+  aes(x = Treatment, y = Resistance, fill = Treatment) +
+  geom_boxplot(alpha = 0.2) + 
+  geom_point(aes(color = facet_label), position = position_jitterdodge(jitter.width =0.05), alpha = 0.7, size= 5) +
+  scale_fill_manual(values = c(D2 = "#ECE320", D3 = "#DF5220")) + #without C0
+  scale_fill_manual(values =c(D1 = "#8CB425", D2 = "#ECE320", D3 = "#DF5220", C0 = "#219ebc"))+ #with C0
+  labs(color = "Species")+
+  theme_minimal(base_size = 20)+
+  guides(fill= FALSE)+
+    xlab("")+
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+  theme(legend.text = element_text(face= "italic"))+
+   ylim(c(-1,1.1))+
+  ggtitle("Asat")
+
+Diam <- 
+  all_resistance_df %>%
+  filter(Trait == "Diameter")%>%
+  ggplot() +
+  aes(x = Treatment, y = Resistance, fill = Treatment) +
+  geom_boxplot(alpha = 0.2) + 
+  geom_point(aes(color = facet_label), position = position_jitterdodge(jitter.width =0.05), alpha = 0.7, size= 5) +
+  scale_fill_manual(values = c(D2 = "#ECE320", D3 = "#DF5220")) +
+  labs(color = "Species")+
+  theme_minimal(base_size = 20)+
+  guides(fill= FALSE)+
+    xlab("")+
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+  theme(legend.text = element_text(face= "italic"))+
+     ylim(c(-1,1.1))+
+  ggtitle("Diameter")
+
+#add with recovery plots beneath
+```
+
+
+##linear model
+
+```{r}
+library(lme4)
+model_RWC <- nlme::lme(Resistance ~ Treatment,  random=~1|Species, data = all_resistance_df %>% filter(Trait == "RWC"), na.action = na.omit, method = "ML") #to account for with-in species variability
+summary(model_RWC)
+plot(model_RWC)
+```
+
+Linear mixed-effects model fit by maximum likelihood
+  Data: all_resistance_df %>% filter(Trait == "RWC") 
+        AIC       BIC   logLik
+  -6.588174 -4.031944 7.294087
+
+Random effects:
+ Formula: ~1 | Species
+        (Intercept)  Residual
+StdDev:  0.08967026 0.1188376
+
+Fixed effects:  Resistance ~ Treatment 
+                 Value  Std.Error DF   t-value p-value
+(Intercept)  0.8664495 0.06077710  6 14.256183   0.000
+TreatmentD3 -0.2104475 0.06861094  6 -3.067258   0.022
+ Correlation: 
+            (Intr)
+TreatmentD3 -0.564
+
+Standardized Within-Group Residuals:
+       Min         Q1        Med         Q3        Max 
+-1.8129332 -0.7402985  0.2397905  0.5501047  1.2346450 
+
+Number of Observations: 14
+Number of Groups: 7
+
+##all trait plot
+```{r}
+library(ggplot2)
+Resistance <- all_resistance_df %>%
+  mutate(label = ifelse(Species == "Epe.fal", "E. falcata", 
+                        ifelse(Species == "Iry.hos", "I. hostmannii", 
+                               ifelse(Species == "Jac.cop", "J. copaia", 
+                                      ifelse(Species == "Pte.off","P. officinalis",
+                                             ifelse(Species == "Sym.off", "S. globulifera",
+                                                    ifelse(Species == "Tac.mel", "T. melinonii",
+                                                           ifelse(Species == "Vir.sur", "V. surinamensis", NA)))))))) %>%
+  select(-Species) %>%
+  rename(Species = label)
+  
+Resistance %>%
+ggplot() +
+ ylab("Resistance index") +
+ aes(x = Treatment, y = Resistance, colour = Species) +
+ geom_jitter(alpha = 0.7, width = 0.1, height = 0, size = 3) +
+ scale_color_hue(direction = 1) +
+ geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+ theme_minimal(base_size = 20) +
+ xlab("")+
+ theme(legend.text = element_text(face = "italic"), legend.position = "bottom") +
+ facet_wrap(vars(Trait)) 
+
+
+
+```
+
+#spider/radar chart
+```{r}
+D2_resistance <- all_resistance_df %>% filter(Treatment == "D2") %>% select(-Treatment)
+D2_resistance <- D2_resistance %>% reshape(idvar = "Species", timevar = "Trait", direction = "wide") %>% select(-Species)
+
+legend_D2 <- all_resistance_df %>% filter(Treatment == "D2") %>% select(-Treatment)  %>% reshape(idvar = "Species", timevar = "Trait", direction = "wide")  %>% select(Species)
+
+D2_resistance <- rbind(rep(1,9), rep(0,9) , D2_resistance)
+
+radarchart(D2_resistance, axistype=4,
+           pcol =c("#F8766D", "#C49A00", "#53B400", "#00C094", "#00B6EB", "#A58AFF", "#FB61D7"),plwd=3, plty=5,
+          cglcol="grey", cglty=9, axislabcol="grey", caxislabels=seq(0,1,0.25), cglwd=1) 
+
+# Add a legend
+legend(x=1.3, y=1.4, legend = legend_D2$Species, bty = "n", pch=20 , text.col = "black",  cex=1.2, pt.cex=3, col =c("#F8766D", "#C49A00", "#53B400", "#00C094", "#00B6EB", "#A58AFF", "#FB61D7"))
+
+#with ggplot2
+D2_resistance <- all_resistance_df %>% filter(Treatment == "D2") %>% select(-Treatment)
+D2_resistance <- D2_resistance %>% reshape(idvar = "Species", timevar = "Trait", direction = "wide")
+
+colnames(D2_resistance) <- gsub("Resistance", "R", colnames(D2_resistance))
+
+D2_radar <- D2_resistance %>%
+  ggradar(
+    grid.label.size =5,  # Affects the grid annotations (0%, 50%, etc.)
+    axis.label.size = 5, # Afftects the names of the variables
+    group.point.size =2,
+    background.circle.colour = "white",group.colours = c("#F8766D", "#C49A00", "#53B400", "#00C094", "#00B6EB", "#A58AFF", "#FB61D7"),group.line.width = 1
+  )+
+  labs(title = "Species Resistance at D2")
+
+#with ggplot2
+D3_resistance <- all_resistance_df %>% filter(Treatment == "D3") %>% select(-Treatment)
+D3_resistance <- D3_resistance %>% reshape(idvar = "Species", timevar = "Trait", direction = "wide")
+
+colnames(D3_resistance) <- gsub("Resistance", "R", colnames(D3_resistance))
+
+D3_radar <- D3_resistance %>%
+  ggradar(
+    grid.label.size =5,  # Affects the grid annotations (0%, 50%, etc.)
+    axis.label.size = 5, # Afftects the names of the variables
+    group.point.size =2,
+    background.circle.colour = "white",group.colours = c("#F8766D", "#C49A00", "#53B400", "#00C094", "#00B6EB", "#A58AFF", "#FB61D7"),group.line.width = 1
+  )+
+  labs(title = "Species Resistance at D3")
+
+ggarrange(D2_radar, D3_radar, common.legend = TRUE, legend = "bottom")
+```
+
+find the area
+inspired from https://stackoverflow.com/questions/47644156/how-to-measure-the-area-of-a-polygon-in-ggplot2 
+```{r}
+D2_resistance <- all_resistance_df %>% filter(Treatment == "D2") %>% select(-Treatment, -SE) %>% filter(Species == "J. copaia") %>% select(-Species)
+
+areas <-  D2_resistance %>% 
+  setNames(c("variable", "value")) 
+
+areas <- areas %>% 
+  mutate(nextval = lead(value, default = value[1]),
+         angle   = (1/11) * (2*pi),
+                   # change 1/n to number of variables
+         area    = value*nextval*sin(angle)/2)
+
+areas %>% summarise(total = sum(area))
+
+#do all calculations directly :
+D2_resistance <- all_resistance_df %>% filter(Treatment == "D2") %>% select(-Treatment, -SE)
+df2 <- D2_resistance  %>% 
+  group_by(Species) %>% 
+  mutate(nextval = lead(Resistance, default =Resistance[1]), # It creates a new column that contains the next value of Mean_Resistance for each row within each species. If there is no next value, it uses the first value of Mean_Resistance within the species as the default.
+         angle = (1/11)*(2*pi),
+         area = Resistance*nextval*sin(angle)/2) %>% 
+  mutate(total = sum(area))  %>%
+  mutate(Treatment = "D2")
+
+D3_resistance <- all_resistance_df %>% filter(Treatment == "D3") %>% select(-Treatment, -SE)
+df3 <- D3_resistance  %>% 
+  group_by(Species) %>% 
+  mutate(nextval = lead(Resistance, default = Resistance[1]),
+         angle = (1/11)*(2*pi),
+         area = Resistance*nextval*sin(angle)/2) %>% 
+  mutate(total = sum(area)) %>%
+  mutate(Treatment = "D3")
+
+df <- rbind(df2, df3)
+
+ggplot(df) +
+  aes(x = Species, y = total, colour = Treatment) +
+  ylab("total area")+
+  geom_point(shape = "circle", size = 2.25) +
+  scale_color_hue(direction = 1) +
+  theme_minimal()
+```
+
+The area is calculated by taking each data point's value, finding the next value for the same species, and then using the sine of a fixed angle (angle = (1/11) * (2*pi)) to compute the area of a trapezoid between each pair of points. Finally, the total area occupied by each species in each treatment is summed up.
+
+alternative way and same results
+```{r}
+# Function to calculate the area of a polygon given its vertices
+calculate_polygon_area <- function(x, y) {
+  n <- length(x)
+  area <- 0
+  for (i in 1:n) {
+    j <- ifelse(i == n, 1, i + 1)
+    area <- area + (x[i] * y[j] - x[j] * y[i])
+  }
+  abs(area) / 2
+}
+
+# Calculate area for D2 radar plot
+D2_areas <- D2_resistance %>%
+   group_by(Species) %>% 
+  mutate(
+    angle_rad = (2 * pi * (row_number() - 1)) / n(),  # Calculate the angle for each data point
+    x_coord = Mean_Resistance * cos(angle_rad),  # Convert polar coordinates to Cartesian x-coordinate
+    y_coord = Mean_Resistance * sin(angle_rad)   # Convert polar coordinates to Cartesian y-coordinate
+  ) %>%
+  summarize(area = calculate_polygon_area(x_coord, y_coord)) %>%
+  mutate(Treatment = "D2")
+
+# Calculate area for D3 radar plot
+D3_areas <- D3_resistance %>%
+   group_by(Species) %>% 
+  mutate(
+    angle_rad = (2 * pi * (row_number() - 1)) / n(),
+    x_coord = Mean_Resistance * cos(angle_rad),
+    y_coord = Mean_Resistance * sin(angle_rad)
+  ) %>%
+  summarize(area = calculate_polygon_area(x_coord, y_coord)) %>%
+  mutate(Treatment = "D3")
+
+# Combine the results
+areas_df <- rbind(D2_areas, D3_areas)
+
+# Plot the total area for each species in each treatment
+ggplot(areas_df) +
+  aes(x = Treatment, y = area, fill = Treatment) +
+  geom_point() +
+  xlab("Treatment") +
+  ylab("Total Area") +
+  labs(title = "Total Area of Species in Radar Plots")
+
+ggplot(areas_df) +
+  aes(x = Species, y = area, colour = Treatment) +
+  ylab("total area")+
+  geom_point(shape = "circle", size = 2.25) +
+  scale_color_hue(direction = 1) +
+  theme_minimal()
+```
+
+#Recovery
+
+##Asat plot
+```{r}
+Data <- Global_DRYER$trait_data 
+DATHDl <- Global_DRYER$HDLW_data
+
+Data <- left_join(Data, DATHDl)
+
+names(Data)
+
+Data <- Data %>%  
+  dplyr::select(-Comment_D, -Comment) %>% dplyr::select(Time, Treatment, Species, 
+       Asat ,gs, E, WUE, RWC, Pmidday , Chloro , FvFm , LT , LA_rwc , SLA, TotalLeafSurface, Height, Diameter, RootShoot) %>% rename(LA = LA_rwc, Total_LA = TotalLeafSurface)
+
+Data <- Data %>%
+  mutate(Treatment = case_when(
+    Time == "t0" & Treatment %in% c("D1", "D2", "D3") ~ "C0",
+    TRUE ~ Treatment
+  ))
+
+  
+melted_data <- melt(Data, id.vars = c("Species", "Treatment", "Time"))
+melted_data$Time <- factor(melted_data$Time, levels = c("t0", "t21", "t27", "t51", "t57", "t71", "t101"))
+
+Asat <- melted_data %>% filter(variable == "Asat") %>% filter(Time %in% c("t0", "t51", "t57", "t101"))
+
+#plot
+
+Asat2 <- Asat %>%
+  group_by(Species, Treatment) %>%
+  summarise( n=n(), mean_asat= mean(value, na.rm=T), sd_asat= sd(value, na.rm=T)) %>%
+  mutate(se_asat= sd_asat/sqrt(n))
+
+Asat_plot <- Asat2 %>%
+mutate(label = ifelse(Species == "Epe.fal", "E. falcata", 
+                        ifelse(Species == "Iry.hos", "I. hostmannii", 
+                               ifelse(Species == "Jac.cop", "J. copaia", 
+                                      ifelse(Species == "Pte.off","P. officinalis",
+                                             ifelse(Species == "Sym.off", "S. globulifera",
+                                                    ifelse(Species == "Tac.mel", "T. melinonii",
+                                                           ifelse(Species == "Vir.sur", "V. surinamensis", NA)))))))) %>%
+ggplot() +
+    geom_errorbar( aes(x=Treatment, ymin=mean_asat-se_asat, ymax=mean_asat+se_asat,  group = Treatment), width=0.4, colour="black", alpha=0.9, size=0.3,    position = position_dodge(width = 0.9))+
+  geom_col(mapping = aes(x = Treatment, y = mean_asat, group = Treatment, fill = Treatment), colour = "black", position = "dodge", alpha=0.6)+
+ theme_minimal(base_size = 14) +
+ scale_fill_manual("Treatment", values =c(D1 = "#8CB425", D2 = "#ECE320", D3 = "#DF5220", C0 = "#219ebc"))+
+ labs(y=expression(paste("Asat \n (µmol.m-2.s-1)")), x="")+
+  theme(axis.text.x = element_blank())+
+  facet_wrap(~label, nrow = 1)+
+    theme(strip.text = element_text(face = "italic"),axis.title.x = element_blank(), plot.margin = margin(l = 16))+
+  guides(fill= "none") #+
+ #  stat_compare_means(label = "p.signif", method = "anova", aes(group=label), ref.group = "C0")
+Asat_plot
+```
+
+##Pmidday plot
+```{r}
+Data <- Global_DRYER$trait_data 
+DATHDl <- Global_DRYER$HDLW_data
+
+Data <- left_join(Data, DATHDl)
+
+names(Data)
+
+Data <- Data %>%  
+  dplyr::select(-Comment_D, -Comment) %>% dplyr::select(Time, Treatment, Species, 
+       Asat ,gs, E, WUE, RWC, Pmidday , Chloro , FvFm , LT , LA_rwc , SLA, TotalLeafSurface, Height, Diameter, RootShoot) %>% rename(LA = LA_rwc, Total_LA = TotalLeafSurface)
+
+Data <- Data %>%
+  mutate(Treatment = case_when(
+    Time == "t0" & Treatment %in% c("D1", "D2", "D3") ~ "C0",
+    TRUE ~ Treatment
+  ))
+
+  
+melted_data <- melt(Data, id.vars = c("Species", "Treatment", "Time"))
+melted_data$Time <- factor(melted_data$Time, levels = c("t0", "t21", "t27", "t51", "t57", "t71", "t101"))
+
+Pmidday <- melted_data %>% filter(variable == "Pmidday") %>% filter(Time %in% c("t0", "t51", "t57", "t101"))
+
+#plot
+Pmidday_plot <- Pmidday %>%
+mutate(label = ifelse(Species == "Epe.fal", "E. falcata", 
+                        ifelse(Species == "Iry.hos", "I. hostmannii", 
+                               ifelse(Species == "Jac.cop", "J. copaia", 
+                                      ifelse(Species == "Pte.off","P. officinalis",
+                                             ifelse(Species == "Sym.off", "S. globulifera",
+                                                    ifelse(Species == "Tac.mel", "T. melinonii",
+                                                           ifelse(Species == "Vir.sur", "V. surinamensis", NA)))))))) %>%
+ggplot() +
+  geom_boxplot(mapping = aes(x = Treatment, y =value, group = Treatment, fill = Treatment), colour = "black", alpha=0.6)+
+  theme_minimal(base_size = 14) +
+ scale_fill_manual("Treatment", values =c(D1 = "#8CB425", D2 = "#ECE320", D3 = "#DF5220", C0 = "#219ebc"))+
+ labs(y= expression(paste("Pmidday \n (MPa)")), x="")+
+  facet_wrap(~label, nrow = 1)+
+    theme( panel.border = element_rect(color="gray", fill=NA), strip.text = element_text(face = "italic"),strip.background = element_blank(),
+  strip.text.x = element_blank(), axis.text.x = element_blank(), plot.margin = margin(l = 16))+
+  guides(alpha="none", fill="none")
+```
+
+
+##gs
+```{r}
+Data <- Global_DRYER$trait_data 
+
+Data$Time <- factor(Data$Time, levels = c("t0","t8", "t14", "t21", "t27", "t51", "t57", "t71", "t101"))
+
+gs_data <- Data %>% dplyr::select(UniqueCode, Species, Treatment, Time, gs) %>%
+mutate(label = ifelse(Species == "Epe.fal", "E. falcata", 
+                        ifelse(Species == "Iry.hos", "I. hostmannii", 
+                               ifelse(Species == "Jac.cop", "J. copaia", 
+                                      ifelse(Species == "Pte.off","P. officinalis",
+                                             ifelse(Species == "Sym.off", "S. globulifera",
+                                                    ifelse(Species == "Tac.mel", "T. melinonii",
+                                                           ifelse(Species == "Vir.sur", "V. surinamensis", NA)))))))) 
+
+gs_data$Time <-  gsub(pattern = "t", replacement = "", x = gs_data$Time)
+gs_data$Time<- factor(gs_data$Time, levels = c("0","8", "14", "21", "27", "51", "57", "71", "101"))
+
+#calcul error bars
+gs <- gs_data %>%
+  group_by(label, Time, Treatment) %>%
+  summarise( n=n(), mean_gs= mean(gs, na.rm=T), sd_gs= sd(gs, na.rm=T)) %>%
+  mutate(se_gs= sd_gs/sqrt(n))
+
+
+gs_plot <- gs %>%
+ filter(Time %in% c("51", "57", "101")) %>%
+ ggplot() +
+  aes(x = Time, y = mean_gs, colour = Treatment) +
+  geom_point(shape = "circle", size = 4) +
+   geom_errorbar( aes(x=Time, ymin=mean_gs-se_gs, ymax=mean_gs+se_gs,  group = Time), width=0.4, colour="black", alpha=0.9, size=0.3,    position = position_dodge(width = 0.9))+
+ scale_color_manual("Treatment", values =c(D1 = "#8CB425", D2 = "#ECE320", D3 = "#DF5220", C0 = "#219ebc"))+
+  theme_minimal(base_size = 14) +
+  theme(axis.text.x = element_text(size = 10))+
+  facet_wrap(vars(label), nrow = 1)+
+  theme(panel.border = element_rect(color="gray", fill=NA),strip.text = element_text(face = "italic"),strip.background = element_blank(),
+  strip.text.x = element_blank(),  plot.margin = margin(l = 16, r=10))+
+  labs(y= expression(paste("gs \n (mmol.m-2.s-1)")), x="")+
+  guides(color="none")
+```
+
+
+#AGR: absolute growth rate
+```{r}
+DATHDl <- Global_DRYER$HDLW_data
+
+#At t21
+
+A <- DATHDl %>%
+  dplyr::select(Time, Treatment, Species, UniqueCode, Diameter)
+
+diameter_wider2 <- A %>% 
+  pivot_wider(
+    id_cols = c("UniqueCode", "Species", "Treatment"),
+    names_from = c("Time"),
+    values_from = Diameter
+  )
+
+diameter_wider <- diameter_wider2 %>% mutate(
+  D_21 = t21-t0/21,
+  D_27 = t27-t0/27,
+  D_71 = t71-t0/71,
+  D_51 = t51-t21/30,
+  D_57 = t57-t27/30,
+  D_101 = t101-t71/30
+) %>%
+  dplyr::select(UniqueCode, Species, Treatment,D_21,
+  D_27,  D_71,  D_51,  D_57,  D_101)
+
+diameter_long <- diameter_wider %>%
+  pivot_longer(cols = c(D_21, D_27, D_71, D_51, D_57, D_101), names_to = "AGR")
+
+#test
+
+diameter_long$Species <- as.factor(diameter_long$Species)
+diameter_long$Treatment <- as.factor(diameter_long$Treatment)
+
+AGR_51 <- diameter_long %>% filter(AGR == "D_51") %>% na.omit(value)
+AGR_57 <- diameter_long %>% filter(AGR == "D_57") %>% na.omit(value)
+AGR_101 <- diameter_long %>% filter(AGR == "D_101") %>% na.omit(value)
+
+anova_agr_51 <- aov(value ~Species +Treatment + Species:Treatment, data= AGR_51)
+anova_agr_57 <- aov(value ~Species +Treatment + Species:Treatment, data= AGR_57)
+anova_agr_101 <- aov(value ~Species +Treatment + Species:Treatment, data= AGR_101)
+
+summary(anova_agr_51)
+summary(anova_agr_57)
+summary(anova_agr_101)
+
+plot(anova_agr_51)
+plot(anova_agr_57)
+plot(anova_agr_101)
+
+#plot
+diameter_long$AGR <- factor(diameter_long$AGR, levels = c("D_21", "D_27", "D_71", "D_51", "D_57", "D_101"))
+
+AGR_plot <- diameter_long %>%
+  mutate(Treatment2 = ifelse(Treatment == "D1", "Recovery from D1", 
+                             ifelse(Treatment == "D2", "Recovery from D2", ifelse(Treatment == "D3", "Recovery from D3", "C0")))) %>%
+   filter(!is.na(value) & is.finite(value)) %>%
+   filter(!(AGR %in% c("D_21", "D_27", "D_71"))) %>%
+  mutate(label = ifelse(Species == "Epe.fal", "Ef", 
+                        ifelse(Species == "Iry.hos", "Ih", 
+                               ifelse(Species == "Jac.cop", "Jc", 
+                                      ifelse(Species == "Pte.off","Po",
+                                             ifelse(Species == "Sym.off", "Sg",
+                                                    ifelse(Species == "Tac.mel", "Tm",
+                                                           ifelse(Species == "Vir.sur", "Vs", NA)))))))) %>%
+ggplot() +
+  aes(x = label, y = value, fill = Treatment2) +
+  geom_boxplot(alpha=0.6) +
+ scale_fill_manual("Treatment", values =c(`Recovery from D1` = "#8CB425", `Recovery from D2` = "#ECE320", `Recovery from D3`= "#DF5220", C0 = "#219ebc"))+
+  labs(y= expression(paste("AGR \n (mm.d-1)")), x= "")+
+  theme_minimal(base_size = 16) +
+  facet_wrap(vars(AGR))+
+  theme(
+    panel.border = element_rect(color="black", fill=NA),
+  strip.background = element_blank(),
+  strip.text.x = element_blank(),
+  axis.text.x = element_text(angle=0, face= "italic"),
+   plot.margin = margin(l = 15)
+)+
+  stat_compare_means(label = "p.signif", method = "t.test")
+AGR_plot
+```
+
+#fvfm
+```{r}
+Data <- Global_DRYER$trait_data 
+Data <- Data %>%  
+  dplyr::select(-Comment_D, -Comment) %>% dplyr::select(Time, Treatment, Species, 
+       Asat ,gs, E, WUE, RWC, Pmidday , Chloro , FvFm , LT , LA_rwc , SLA, TotalLeafSurface, RootShoot) %>% rename(LA = LA_rwc, Total_LA = TotalLeafSurface)
+
+Data <- Data %>%
+  mutate(Treatment = case_when(
+    Time == "t0" & Treatment %in% c("D1", "D2", "D3") ~ "C0",
+    TRUE ~ Treatment
+  ))
+
+  
+melted_data <- melt(Data, id.vars = c("Species", "Treatment", "Time"))
+melted_data$Time <- factor(melted_data$Time, levels = c("t0", "t21", "t27", "t51", "t57", "t71", "t101"))
+
+FvFm <- melted_data %>% filter(variable == "FvFm") %>% filter(Time %in% c("t51", "t57", "t101"))
+
+#plot
+
+FvFm2 <- FvFm %>%
+  group_by(Species, Treatment) %>%
+  summarise( n=n(), mean_FvFm= mean(value, na.rm=T), sd_FvFm= sd(value, na.rm=T)) %>%
+  mutate(se_FvFm= sd_FvFm/sqrt(n))
+
+FvFm_plot <- FvFm2 %>%
+mutate(label = ifelse(Species == "Epe.fal", "E. falcata", 
+                        ifelse(Species == "Iry.hos", "I. hostmannii", 
+                               ifelse(Species == "Jac.cop", "J. copaia", 
+                                      ifelse(Species == "Pte.off","P. officinalis",
+                                             ifelse(Species == "Sym.off", "S. globulifera",
+                                                    ifelse(Species == "Tac.mel", "T. melinonii",
+                                                           ifelse(Species == "Vir.sur", "V. surinamensis", NA)))))))) %>%
+ggplot() +
+    geom_errorbar( aes(x=Treatment, ymin=mean_FvFm-se_FvFm, ymax=mean_FvFm+se_FvFm,  group = Treatment), width=0.4, colour="black", alpha=0.9, size=0.3,    position = position_dodge(width = 0.9))+
+  geom_col(mapping = aes(x = Treatment, y = mean_FvFm, group = Treatment, fill = Treatment), colour = "black", position = "dodge", alpha=0.6)+
+  theme_minimal(base_size = 14) +
+ scale_fill_manual("Treatment", values =c(D1 = "#8CB425", D2 = "#ECE320", D3 = "#DF5220", C0 = "#219ebc"))+
+ labs(y=expression(paste("FvFm \n  ")), x="")+
+ # theme(axis.text.x = element_text(face="italic"))+
+  facet_wrap(~label, nrow = 1)+
+    theme(strip.text = element_text(face = "italic"),strip.background = element_blank(),
+  strip.text.x = element_blank(), plot.margin = margin(l = 16), axis.text.x = element_blank())+
+  guides(fill= "none")
+FvFm_plot 
+```
+
+
+```{r}
+#get a legend
+to_get_legend_plot <- Asat2 %>% mutate(Treatment2 = ifelse(Treatment == "D1", "Recovery from D1", 
+                             ifelse(Treatment == "D2", "Recovery from D2", ifelse(Treatment == "D3", "Recovery from D3", "C0")))) %>%
+ggplot() +
+  geom_col(mapping = aes(x = Treatment2, y = mean_asat, group = Treatment2, fill = Treatment2), colour = "black", position = "dodge", alpha=0.6)+
+ theme_minimal(base_size = 16) +
+ scale_fill_manual("Treatment", values =c(`Recovery from D1` = "#8CB425", `Recovery from D2` = "#ECE320", `Recovery from D3`= "#DF5220", C0 = "#219ebc"))+
+   theme(legend.position = "bottom", legend.box = "horizontal", legend.direction = "horizontal")+
+ labs(y=expression(paste("Asat \n (µmol.m-2.s-1)")), x="")+
+  theme(axis.text.x = element_blank())+
+  facet_wrap(~Species, nrow = 1)+
+    theme(strip.text = element_text(face = "italic"),axis.title.x = element_blank(), plot.margin = margin(l = 15))
+to_get_legend_plot
+
+legend <- get_legend(to_get_legend_plot)
+
+
+recovery_trait <- ggarrange(Asat_plot, FvFm_plot, Pmidday_plot, gs_plot, as_ggplot(legend), nrow= 5, heights = c(1,1,1,1,0.2))
+
+ggsave(filename = "./results/ecophysio/recovery_trait.jpeg", plot = recovery_trait, width = 8, height = 7)
+```
+
+
+
+## Recovery index for D1
+
+function with c0
+```{r}
+Recovery_D1 <- function(data, trait_name) {
+  recovery_df <- data.frame(Species = character(),
+                            Treatment = character(),
+                            Recovery = numeric(),
+                            stringsAsFactors = FALSE)
+  unique_species <- unique(data$Species)
+  Treatments <- c("D1")  # Treatments to calculate Recovery for
+  
+  for (i in unique_species) {
+    species_data <- data %>% filter(Species == i)
+    
+    CT_drought <- mean(species_data[[trait_name]][species_data$Time == "t21" & species_data$Treatment == "C0"])
+    CT_recovery <- mean(species_data[[trait_name]][species_data$Time == "t51" & species_data$Treatment == "C0"])
+    
+    for (j in Treatments) {
+      DT1 <- abs(CT_drought - mean(species_data[[trait_name]][species_data$Time %in% c("t21") & species_data$Treatment == j]))
+      DT2 <- abs(CT_recovery - mean(species_data[[trait_name]][species_data$Time %in% c("t51") & species_data$Treatment == j]))
+      
+      Recovery <- ((2 * abs(DT1)) / (abs(DT1) + abs(DT2))) - 1
+      
+      species_recovery <- data.frame(Species = i,
+                                     Treatment = j,
+                                     Recovery = Recovery,
+                                     stringsAsFactors = FALSE)
+      
+      recovery_df <- rbind(recovery_df, species_recovery)
+    }
+  }
+  
+  return(recovery_df)
+}
+
+```
+
+```{r}
+
+Data <- Global_DRYER$trait_data 
+DATHDl <- Global_DRYER$HDLW_data
+Data <- left_join(Data, DATHDl)
+
+Data <- Data %>%
+  mutate(Treatment = case_when(
+    Time == "t0" & Treatment %in% c("D1", "D2", "D3") ~ "C0",
+    TRUE ~ Treatment
+  ))
+
+
+Data <-  Data %>%
+  mutate(Treatment = case_when(
+    Time == "t21" & Treatment %in% c("D1", "D2", "D3") ~ "D1",
+    TRUE ~ Treatment
+  )) 
+#%>%
+ # filter(Treatment != "C0") 
+
+
+
+# Calculate resistance for each trait
+trait <- c("Asat")
+
+all_recovery_D1 <- data.frame(Species = character(),
+                                 Trait = character(),
+                                 Treatment = character(),
+                                 Recovery = numeric())
+for (trait in trait) {
+  res_df <- Data %>% dplyr::select(Species, Treatment, Time, trait) %>% drop_na() 
+  res_df <- Recovery_D1(res_df, trait) %>% mutate(Trait = trait)
+  all_recovery_D1 <- rbind(all_recovery_D1, res_df) 
+}
+
+all_recovery_D1 <- all_recovery_D1 %>% mutate(Treatment = "D1")
+```
+##Recovery index for D2
+
+function for D2
+```{r}
+Recovery_D2 <- function(data, trait_name) {
+  recovery_df <- data.frame(Species = character(),
+                            Treatment = character(),
+                            Recovery = numeric(),
+                            stringsAsFactors = FALSE)
+  
+  unique_species <- unique(data$Species)
+  Treatments <- c("D2")  # Treatments to calculate Recovery for
+  
+  for (i in unique_species) {
+    species_data <- data %>% filter(Species == i)
+    
+    CT_drought <- mean(species_data[[trait_name]][species_data$Time == "t21" & species_data$Treatment == "D1"])
+    CT_recovery <- mean(species_data[[trait_name]][species_data$Time == "t51" & species_data$Treatment == "D1"])
+    
+    for (j in Treatments) {
+      DT1 <- abs(CT_drought - mean(species_data[[trait_name]][species_data$Time %in% c("t27") & species_data$Treatment == j]))
+      DT2 <- abs(CT_recovery - mean(species_data[[trait_name]][species_data$Time %in% c("t57") & species_data$Treatment == j]))
+      
+      Recovery <- ((2 * abs(DT1)) / (abs(DT1) + abs(DT2))) - 1
+      
+      species_recovery <- data.frame(Species = i,
+                                     Treatment = j,
+                                     Recovery = Recovery,
+                                     stringsAsFactors = FALSE)
+      
+      recovery_df <- rbind(recovery_df, species_recovery)
+    }
+  }
+  
+  return(recovery_df)
+}
+
+```
+
+
+function with c0
+```{r}
+Recovery_D2 <- function(data, trait_name) {
+  recovery_df <- data.frame(Species = character(),
+                            Treatment = character(),
+                            Recovery = numeric(),
+                            stringsAsFactors = FALSE)
+  
+  unique_species <- unique(data$Species)
+  Treatments <- c("D2")  # Treatments to calculate Recovery for
+  
+  for (i in unique_species) {
+    species_data <- data %>% filter(Species == i)
+    
+    CT_drought <- mean(species_data[[trait_name]][species_data$Time == "t27" & species_data$Treatment == "C0"])
+    CT_recovery <- mean(species_data[[trait_name]][species_data$Time == "t57" & species_data$Treatment == "C0"])
+    
+    for (j in Treatments) {
+      DT1 <- abs(CT_drought - mean(species_data[[trait_name]][species_data$Time %in% c("t27") & species_data$Treatment == j]))
+      DT2 <- abs(CT_recovery - mean(species_data[[trait_name]][species_data$Time %in% c("t57") & species_data$Treatment == j]))
+      
+      Recovery <- ((2 * abs(DT1)) / (abs(DT1) + abs(DT2))) - 1
+      
+      species_recovery <- data.frame(Species = i,
+                                     Treatment = j,
+                                     Recovery = Recovery,
+                                     stringsAsFactors = FALSE)
+      
+      recovery_df <- rbind(recovery_df, species_recovery)
+    }
+  }
+  
+  return(recovery_df)
+}
+
+```
+
+```{r}
+
+Data <- Global_DRYER$trait_data 
+DATHDl <- Global_DRYER$HDLW_data
+Data <- left_join(Data, DATHDl)
+
+Data <- Data %>%
+  mutate(Treatment = case_when(
+    Time == "t0" & Treatment %in% c("D1", "D2", "D3") ~ "C0",
+    TRUE ~ Treatment
+  ))
+
+
+Data <-  Data %>%
+  mutate(Treatment = case_when(
+    Time == "t21" & Treatment %in% c("D1", "D2", "D3") ~ "D1",
+    TRUE ~ Treatment
+  )) 
+#%>%
+ # filter(Treatment != "C0") 
+
+
+
+# Calculate resistance for each trait
+trait <- c("Asat")
+
+all_recovery_D2 <- data.frame(Species = character(),
+                                 Trait = character(),
+                                 Treatment = character(),
+                                 Recovery = numeric())
+for (trait in trait) {
+  res_df <- Data %>% dplyr::select(Species, Treatment, Time, trait) %>% drop_na() 
+  res_df <- Recovery_D2(res_df, trait) %>% mutate(Trait = trait)
+  all_recovery_D2 <- rbind(all_recovery_D2, res_df) 
+}
+
+all_recovery_D2 <- all_recovery_D2 %>% mutate(Treatment = "D2")
+```
+
+
+##Recovery index for D3
+```{r}
+Recovery_D3 <- function(data, trait_name) {
+  recovery_df <- data.frame(Species = character(),
+                            Treatment = character(),
+                            Recovery = numeric(),
+                            stringsAsFactors = FALSE)
+  
+  unique_species <- c("Iry.hos", "Jac.cop", "Pte.off", "Sym.off", "Tac.mel") #because epe.fal and virsur are dead!
+  Treatments <- c("D3")  # Treatments to calculate Recovery for
+  
+  for (i in unique_species) {
+    species_data <- data %>% filter(Species == i)
+    
+    CT_drought <- mean(species_data[[trait_name]][species_data$Time == "t21" & species_data$Treatment == "D1"])
+    CT_recovery <- mean(species_data[[trait_name]][species_data$Time == "t51" & species_data$Treatment == "D1"])
+    
+    for (j in Treatments) {
+      DT1 <- abs(CT_drought - mean(species_data[[trait_name]][species_data$Time %in% c("t71") & species_data$Treatment == j]))
+      DT2 <- abs(CT_recovery - mean(species_data[[trait_name]][species_data$Time %in% c("t101") & species_data$Treatment == j]))
+      
+      Recovery <- ((2 * abs(DT1)) / (abs(DT1) + abs(DT2))) - 1
+      
+      species_recovery <- data.frame(Species = i,
+                                     Treatment = j,
+                                     Recovery = Recovery,
+                                     stringsAsFactors = FALSE)
+      
+      recovery_df <- rbind(recovery_df, species_recovery)
+    }
+  }
+  
+  return(recovery_df)
+}
+
+```
+
+function with c0
+```{r}
+Recovery_D3 <- function(data, trait_name) {
+  recovery_df <- data.frame(Species = character(),
+                            Treatment = character(),
+                            Recovery = numeric(),
+                            stringsAsFactors = FALSE)
+  
+  unique_species <- unique(data$Species)
+  Treatments <- c("D3")  # Treatments to calculate Recovery for
+  
+  for (i in unique_species) {
+    species_data <- data %>% filter(Species == i)
+    
+    CT_drought <- mean(species_data[[trait_name]][species_data$Time == "t71" & species_data$Treatment == "C0"])
+    CT_recovery <- mean(species_data[[trait_name]][species_data$Time == "t101" & species_data$Treatment == "C0"])
+    
+    for (j in Treatments) {
+      DT1 <- abs(CT_drought - mean(species_data[[trait_name]][species_data$Time %in% c("t71") & species_data$Treatment == j]))
+      DT2 <- abs(CT_recovery - mean(species_data[[trait_name]][species_data$Time %in% c("t101") & species_data$Treatment == j]))
+      
+      Recovery <- ((2 * abs(DT1)) / (abs(DT1) + abs(DT2))) - 1
+      
+      species_recovery <- data.frame(Species = i,
+                                     Treatment = j,
+                                     Recovery = Recovery,
+                                     stringsAsFactors = FALSE)
+      
+      recovery_df <- rbind(recovery_df, species_recovery)
+    }
+  }
+  
+  return(recovery_df)
+}
+
+```
+
+```{r}
+
+Data <- Global_DRYER$trait_data 
+DATHDl <- Global_DRYER$HDLW_data
+Data <- left_join(Data, DATHDl)
+
+Data <- Data %>%
+  mutate(Treatment = case_when(
+    Time == "t0" & Treatment %in% c("D1", "D2", "D3") ~ "C0",
+    TRUE ~ Treatment
+  ))
+
+
+Data <-  Data %>%
+  mutate(Treatment = case_when(
+    Time == "t21" & Treatment %in% c("D1", "D2", "D3") ~ "D1",
+    TRUE ~ Treatment
+  )) #%>%
+  #filter(Treatment != "C0") 
+
+# Calculate resistance for each trait
+traits <- c("Asat")
+
+all_recovery_D3 <- data.frame(Species = character(),
+                                 Trait = character(),
+                                 Treatment = character(),
+                                 Recovery = numeric())
+for (trait in traits) {
+  res_df <- Data %>% dplyr::select(Species, Treatment, Time, trait) %>% drop_na() 
+  res_df <- Recovery_D3(res_df, trait) %>% mutate(Trait = trait)
+  all_recovery_D3 <- rbind(all_recovery_D3, res_df) 
+}
+
+all_recovery_D3 <- all_recovery_D3 %>% mutate(Treatment = "D3")
+
+```
+
+##combine recovery indices
+```{r}
+Recovery_all <- rbind(all_recovery_D1, all_recovery_D2, all_recovery_D3)
+#Recovery_all <- rbind(all_recovery_D2, all_recovery_D3) #without C0
+
+write.csv(x = Recovery_all, file = "Recovery_trait.csv")
+
+ df  <-Recovery_all   %>% reshape(idvar = c("Species", "Trait"), timevar = "Treatment", direction = "wide") %>% rename(Name =Species) %>%
+  mutate(Species = ifelse(Name == "Epe.fal", "E. falcata", 
+                        ifelse(Name == "Iry.hos", "I. hostmannii", 
+                               ifelse(Name == "Jac.cop", "J. copaia", 
+                                      ifelse(Name == "Pte.off","P. officinalis",
+                                             ifelse(Name == "Sym.off", "S. globulifera",
+                                                    ifelse(Name == "Tac.mel", "T. melinonii",
+                                                           ifelse(Name == "Vir.sur", "V. surinamensis", NA)))))))) %>%
+  dplyr::select(-Name) 
+```
+
+##plot
+without C0 - D1 reference
+```{r}
+# Define labels for each species
+species_labels <- c("Epe.fal" = "E. falcata",
+                    "Iry.hos" = "I. hostmannii",
+                    "Jac.cop" = "J. copaia",
+                    "Pte.off" = "P. officinalis",
+                    "Sym.off" = "S. globulifera",
+                    "Tac.mel" = "T. melinonii",
+                    "Vir.sur" = "V. surinamensis")
+
+Recovery_all$facet_label <- species_labels[Recovery_all$Species]
+
+#plot together 
+Asat_recov <- 
+  Recovery_all %>%
+  filter(Trait == "Asat")%>%
+  ggplot() +
+  aes(x = Treatment, y = Recovery, fill = Treatment) +
+  geom_boxplot(alpha = 0.2) + 
+  geom_point(aes(color = facet_label), position = position_jitterdodge(jitter.width =0.05), alpha = 0.7, size= 5) +
+  scale_fill_manual(values = c(D2 = "#ECE320", D3 = "#DF5220")) +
+  labs(color = "Species")+
+  theme_minimal(base_size = 20)+
+  xlab("")+
+  guides(fill= FALSE)+
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+  theme(legend.text = element_text(face= "italic"))+
+   ylim(c(-1,1.1))
+
+Diam_recov <- 
+  Recovery_all %>%
+  filter(Trait == "Diameter")%>%
+  ggplot() +
+  aes(x = Treatment, y = Recovery, fill = Treatment) +
+  geom_boxplot(alpha = 0.2) + 
+  geom_point(aes(color = facet_label), position = position_jitterdodge(jitter.width =0.05), alpha = 0.7, size= 5) +
+  scale_fill_manual(values = c(D2 = "#ECE320", D3 = "#DF5220")) +
+  labs(color = "Species")+
+  theme_minimal(base_size = 20)+
+  xlab("")+
+  guides(fill= FALSE)+
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+  theme(legend.text = element_text(face= "italic"))+
+   ylim(c(-1,1.1))
+
+ggarrange(Asat, Diam, Asat_recov, Diam_recov, ncol = 2, nrow=2, common.legend = TRUE, legend= "bottom")
+```
+
+with C0 / C0 reference
+```{r}
+# Define labels for each species
+species_labels <- c("Epe.fal" = "E. falcata",
+                    "Iry.hos" = "I. hostmannii",
+                    "Jac.cop" = "J. copaia",
+                    "Pte.off" = "P. officinalis",
+                    "Sym.off" = "S. globulifera",
+                    "Tac.mel" = "T. melinonii",
+                    "Vir.sur" = "V. surinamensis")
+
+Recovery_all$facet_label <- species_labels[Recovery_all$Species]
+
+#plot together 
+Asat_recov <- 
+  Recovery_all %>%
+  filter(Trait == "Asat")%>%
+  ggplot() +
+  aes(x = Treatment, y = Recovery, fill = Treatment) +
+  geom_boxplot(alpha = 0.2) + 
+  geom_point(aes(color = facet_label), position = position_jitterdodge(jitter.width =0.05), alpha = 0.7, size= 5) +
+  scale_fill_manual(values = c(D2 = "#ECE320", D3 = "#DF5220")) +
+  labs(color = "Species")+
+  theme_minimal(base_size = 20)+
+  xlab("")+
+  guides(fill= FALSE)+
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+  theme(legend.text = element_text(face= "italic"))+
+   ylim(c(-1,1.1))
+
+Diam_recov <- 
+  Recovery_all %>%
+  filter(Trait == "Diameter")%>%
+  ggplot() +
+  aes(x = Treatment, y = Recovery, fill = Treatment) +
+  geom_boxplot(alpha = 0.2) + 
+  geom_point(aes(color = facet_label), position = position_jitterdodge(jitter.width =0.05), alpha = 0.7, size= 5) +
+  scale_fill_manual(values = c(D2 = "#ECE320", D3 = "#DF5220")) +
+  labs(color = "Species")+
+  theme_minimal(base_size = 20)+
+  xlab("")+
+  guides(fill= FALSE)+
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+  theme(legend.text = element_text(face= "italic"))+
+   ylim(c(-1,1.1))
+
+ggarrange(Asat, Diam, Asat_recov, Diam_recov, ncol = 2, nrow=2, common.legend = TRUE, legend= "bottom")
+```
+
+#Resilience Asat
+with C0 /C0 reference
+```{r}
+#at D1
+survival_t21 <- survival %>% dplyr::filter(Time == "t21") %>% filter(Treatment != "C0") %>% rename(facet_label = Species) %>% dplyr::select(facet_label, survival_rate) 
+survival_t51 <- survival %>% filter(Time == "t51") %>% filter(Treatment != "C0") %>% rename(facet_label = Species) %>% dplyr::select(facet_label, survival_rate)
+
+
+D1_recov <- Recovery_all  %>% filter(Treatment =="D1") 
+names(D1_recov)
+
+names(survival_t51)
+
+D1_recov <- left_join(D1_recov, survival_t51) %>%
+  mutate(new_Recovery = Recovery * (survival_rate/100))
+
+D1_resis <- all_resistance_df %>% filter(Treatment =="D1") 
+D1_resis <- left_join(D1_resis, survival_t21) %>%
+  mutate(new_Resistance = Resistance *(survival_rate/100))
+
+Resilience_D1 <- cbind(D1_recov, D1_resis)
+names(Resilience_D1)
+Resilience_D1 <- Resilience_D1[,c(1,2,4,5,7,14)]
+
+# Create the biplot D1 Asat
+Asat_D1 <- Resilience_D1 %>% dplyr::filter(Trait == "Asat") %>%
+ggplot(aes(x = new_Resistance, y = new_Recovery)) +
+  geom_point(size= 4,aes(color = facet_label)) +
+#geom_text_repel(aes(label = facet_label), box.padding = 0.5, point.padding = 0.3, size = 7)+
+  labs(
+       x = "",
+       y = "Recovery Score")+
+   geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+   geom_vline(xintercept = 0, linetype = "dashed", color = "red") +
+   geom_segment( aes(x=0, xend=1,y=1, yend=0),linewidth = 1,color = "#34a0a4")+
+  # ylim(c(-0.8,1))+
+  # xlim(c(0,1))+
+  theme_minimal(base_size = 22)+
+  guides(color = "none")
+
+# Diam_D1 <- Resilience_D1 %>% dplyr::filter(Trait == "Diameter") %>%
+# ggplot(aes(x = new_Resistance, y = new_Recovery)) +
+#   geom_point(size= 4,aes(color = facet_label)) +
+# #geom_text_repel(aes(label = facet_label), box.padding = 0.5, point.padding = 0.3, size = 7)+
+#   labs(
+#        x = "",
+#        y = "Recovery Score")+
+#    geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+#    geom_vline(xintercept = 0, linetype = "dashed", color = "red") +
+#   geom_segment( aes(x=0, xend=1,y=1, yend=0),linewidth = 1,color = "#34a0a4") +
+#   ylim(c(-0.8,1))+
+#   xlim(c(0,1))+
+#   theme_minimal(base_size = 22)+
+#   guides(color = "none")
+# Diam_D1 
+
+# Create a text grob for the title
+title_D1 <- "Current drought scenario"
+tgrob <- ggpubr::text_grob(title_D1,size = 24, color = "#8CB425")
+# Draw the text
+plot_0 <- as_ggplot(tgrob) + theme(plot.margin = margin(0,0,0,0, "cm"))
+
+Resilience_plot_D1 <- ggarrange(plot_0, Asat_D1, nrow = 2, heights = c(0.5,2)) 
+Resilience_plot_D1
+
+
+#######################################################
+#at D2
+survival_t27 <- survival %>% dplyr::filter(Time == "t27") %>% filter(Treatment != "C0") %>% rename(facet_label = Species) %>% dplyr::select(facet_label, survival_rate) 
+survival_t57 <- survival %>% filter(Time == "t57") %>% filter(Treatment != "C0") %>% rename(facet_label = Species) %>% dplyr::select(facet_label, survival_rate)
+
+
+D2_recov <- Recovery_all  %>% filter(Treatment =="D2") 
+names(D2_recov)
+
+names(survival_t57)
+
+D2_recov <- left_join(D2_recov, survival_t57) %>%
+  mutate(new_Recovery = Recovery * (survival_rate/100))
+
+D2_resis <- all_resistance_df %>% filter(Treatment =="D2") 
+D2_resis <- left_join(D2_resis, survival_t27) %>%
+  mutate(new_Resistance = Resistance *(survival_rate/100))
+
+Resilience_D2 <- cbind(D2_recov, D2_resis)
+names(Resilience_D2)
+Resilience_D2 <- Resilience_D2[,c(1,2,4,5,7,14)]
+
+# Create the biplot D2 Asat
+Asat_D2 <- Resilience_D2 %>% dplyr::filter(Trait == "Asat") %>%
+ggplot(aes(x = new_Resistance, y = new_Recovery)) +
+  geom_point(size= 4,aes(color = facet_label)) +
+#geom_text_repel(aes(label = facet_label), box.padding = 0.5, point.padding = 0.3, size = 7)+
+  labs(
+       x = "",
+       y = "Recovery Score")+
+   geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+   geom_vline(xintercept = 0, linetype = "dashed", color = "red") +
+   geom_segment( aes(x=0, xend=1,y=1, yend=0),linewidth = 1,color = "#34a0a4")+
+  #  ylim(c(-0.8,1))+
+  # xlim(c(0,1))+
+  theme_minimal(base_size = 22)+
+  guides(color = "none")
+
+# Diam_D2 <- Resilience_D2 %>% dplyr::filter(Trait == "Diameter") %>%
+# ggplot(aes(x = new_Resistance, y = new_Recovery)) +
+#   geom_point(size= 4,aes(color = facet_label)) +
+# #geom_text_repel(aes(label = facet_label), box.padding = 0.5, point.padding = 0.3, size = 7)+
+#   labs(
+#        x = "",
+#        y = "Recovery Score")+
+#    geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+#    geom_vline(xintercept = 0, linetype = "dashed", color = "red") +
+#   geom_segment( aes(x=0, xend=1,y=1, yend=0),linewidth = 1,color = "#34a0a4") +
+#   ylim(c(-0.8,1))+
+#   xlim(c(0,1))+
+#   theme_minimal(base_size = 22)+
+#   guides(color = "none")
+# Diam_D2 
+
+# Create a text grob for the title
+title_D2 <- "Projected drought scenario"
+tgrob <- ggpubr::text_grob(title_D2,size = 24, color = "#eeba0b")
+# Draw the text
+plot_0 <- as_ggplot(tgrob) + theme(plot.margin = margin(0,0,0,0, "cm"))
+
+Resilience_plot_D2 <- ggarrange(plot_0, Asat_D2, nrow = 2, heights = c(0.5,2,2)) 
+Resilience_plot_D2
+
+
+#######################################################
+
+
+#at D3
+survival_t71 <- survival %>% filter(Time == "t71") %>% filter(Treatment != "C0") %>% rename(facet_label = Species) %>% dplyr::select(facet_label, survival_rate)
+survival_t101 <- survival %>% filter(Time == "t101") %>% filter(Treatment != "C0") %>% rename(facet_label = Species) %>% dplyr::select(facet_label, survival_rate)
+
+
+D3_recov <- Recovery_all  %>% filter(Treatment =="D3")
+D3_recov[11,]<- c("Epe.fal", "D3", "0", "Asat", "E. falcata") 
+D3_recov[12,]<- c("Epe.fal", "D3", "0", "Diameter", "E. falcata") 
+D3_recov[13,]<- c("Vir.sur", "D3", "0", "Diameter", "V. surinamensis") 
+D3_recov[14,]<- c("Vir.sur", "D3", "0", "Asat", "V. surinamensis") 
+D3_recov$Recovery <- as.numeric(D3_recov$Recovery)
+D3_recov <- left_join(D3_recov, survival_t101) %>%
+  mutate(new_Recovery = Recovery * (survival_rate/100))
+
+D3_resis <- all_resistance_df %>% filter(Treatment =="D3") 
+D3_resis <- left_join(D3_resis, survival_t71) %>%
+  mutate(new_Resistance = Resistance *(survival_rate/100))
+
+Resilience_D3 <- cbind(D3_recov, D3_resis)
+names(Resilience_D3)
+Resilience_D3 <- Resilience_D3[,c(1,2,4,5,7,14)]
+
+# Create the biplot D3 Asat
+Asat_D3 <- Resilience_D3 %>% filter(Trait == "Asat") %>%
+ggplot(aes(x = new_Resistance, y = new_Recovery)) +
+  geom_point(size= 4,aes(color = facet_label)) +
+#geom_text(aes(label = facet_label), vjust = 1.5) +
+ #geom_text_repel(aes(label = facet_label), box.padding = 0.5, point.padding = 0.3, size = 7)+  # Use geom_text_repel
+    labs(
+       x = "Resistance Score",
+       y = "Recovery score")+
+   geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+   geom_vline(xintercept = 0, linetype = "dashed", color = "red") +
+   geom_segment( aes(x=0, xend=1,y=1, yend=0),linewidth = 1,color = "#34a0a4")+
+  # ylim(c(-0.8,1))+
+  # xlim(c(0,1))+
+ guides(color = guide_legend(title = "Species"))+
+  theme_minimal(base_size = 22)+
+  theme(legend.text = element_text(face= "italic"))
+
+# Diam_D3 <- Resilience_D3 %>% filter(Trait == "Diameter") %>%
+# ggplot(aes(x = new_Resistance, y = new_Recovery)) +
+#   geom_point(size= 4,aes(color = facet_label)) +
+# #geom_text(aes(label = facet_label), vjust = 1.5) +
+# # geom_text_repel(aes(label = facet_label), box.padding = 0.5, point.padding = 0.3, size = 7)+  # Use geom_text_repel
+#     labs(
+#        x = "Resistance Score",
+#        y = "")+
+#    geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+#    geom_vline(xintercept = 0, linetype = "dashed", color = "red") +
+#    geom_segment( aes(x=0, xend=1,y=1, yend=0),linewidth = 1,color = "#34a0a4")+
+#    ylim(c(-0.8,1))+
+#   xlim(c(0,1))+
+#   guides(color = guide_legend(title = "Species"))+
+#   theme_minimal(base_size = 22)+
+#   theme(legend.text = element_text(face= "italic"))
+# Diam_D3  
+
+
+# Create a text grob for the title
+title_D3 <- "Extreme drought scenario"
+tgrob <- ggpubr::text_grob(title_D3,size = 24, color = "#DF5220")
+# Draw the text
+plot_1 <- as_ggplot(tgrob) + theme(plot.margin = margin(0,0,0,0, "cm"))
+
+Resilience_plot_D3 <- ggarrange(plot_1, Asat_D3,  nrow = 2, legend = "bottom", common.legend = TRUE, heights = c(0.5,2) ) 
+Resilience_plot_D3
+
+Resilience_plot <- ggarrange(Resilience_plot_D1, Resilience_plot_D2, Resilience_plot_D3, ncol=1, nrow= 3, common.legend = TRUE, legend = "bottom")
+Resilience_plot 
+
+ggsave(filename = "Resilience_plot.jpeg", plot = Resilience_plot, width = 10, height = 12)
+```
+
+#Resilience Asat D2
+
+```{r}
+#at D2
+survival_t27 <- survival %>% dplyr::filter(Time == "t27") %>% filter(Treatment != "C0") %>% rename(facet_label = Species) %>% dplyr::select(facet_label, survival_rate) 
+survival_t57 <- survival %>% filter(Time == "t57") %>% filter(Treatment != "C0") %>% rename(facet_label = Species) %>% dplyr::select(facet_label, survival_rate)
+
+
+D2_recov <- Recovery_all  %>% filter(Treatment =="D2") 
+names(D2_recov)
+
+names(survival_t57)
+
+D2_recov <- left_join(D2_recov, survival_t57) %>%
+  mutate(new_Recovery = Recovery * (survival_rate/100))
+
+D2_resis <- all_resistance_df %>% filter(Treatment =="D2") 
+D2_resis <- left_join(D2_resis, survival_t27) %>%
+  mutate(new_Resistance = Resistance *(survival_rate/100))
+
+Resilience_D2 <- cbind(D2_recov, D2_resis)
+names(Resilience_D2)
+Resilience_D2 <- Resilience_D2[,c(1,2,4,5,7,14)]
+
+# Create the biplot D2 Asat
+Asat_D2 <- Resilience_D2 %>% dplyr::filter(Trait == "Asat") %>%
+ggplot(aes(x = new_Resistance, y = new_Recovery)) +
+  geom_point(size= 4,aes(color = facet_label)) +
+geom_text_repel(aes(label = facet_label), box.padding = 0.5, point.padding = 0.3, size = 7)+
+  labs(
+       x = "",
+       y = "Recovery Score")+
+   geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+   geom_vline(xintercept = 0, linetype = "dashed", color = "red") +
+   geom_segment( aes(x=0, xend=1,y=1, yend=0),linewidth = 1,color = "#34a0a4")+
+  ylim(c(-1,1))+
+  xlim(c(-1,1))+
+  theme_minimal(base_size = 22)+
+  guides(color = "none")
+
+Diam_D2 <- Resilience_D2 %>% dplyr::filter(Trait == "Diameter") %>%
+ggplot(aes(x = new_Resistance, y = new_Recovery)) +
+  geom_point(size= 4,aes(color = facet_label)) +
+geom_text_repel(aes(label = facet_label), box.padding = 0.5, point.padding = 0.3, size = 7)+
+  labs(
+       x = "",
+       y = "Recovery Score")+
+   geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+   geom_vline(xintercept = 0, linetype = "dashed", color = "red") +
+  geom_segment( aes(x=0, xend=1,y=1, yend=0),linewidth = 1,color = "#34a0a4") +
+  ylim(c(-1,1))+
+  xlim(c(-1,1))+
+  theme_minimal(base_size = 22)+
+  guides(color = "none")
+Diam_D2 
+
+# Create a text grob for the title
+title_D2 <- "Projected drought scenario"
+tgrob <- ggpubr::text_grob(title_D2,size = 24, color = "#eeba0b")
+# Draw the text
+plot_0 <- as_ggplot(tgrob) + theme(plot.margin = margin(0,0,0,0, "cm"))
+
+Resilience_plot_D2 <- ggarrange(plot_0, NULL, Asat_D2, Diam_D2, ncol = 2, nrow = 2, labels = c("", "", "Asat", "Diameter"), heights = c(0.5,2,2), label.y = c(1.05, 1.05), font.label =  list(size = 20, face= "italic")) 
+Resilience_plot_D2
+
+
+#######################################################
+
+
+#at D3
+survival_t71 <- survival %>% filter(Time == "t71") %>% filter(Treatment != "C0") %>% rename(facet_label = Species) %>% dplyr::select(facet_label, survival_rate)
+survival_t101 <- survival %>% filter(Time == "t101") %>% filter(Treatment != "C0") %>% rename(facet_label = Species) %>% dplyr::select(facet_label, survival_rate)
+
+
+D3_recov <- Recovery_all  %>% filter(Treatment =="D3")
+D3_recov[11,]<- c("Epe.fal", "D3", "0", "Asat", "E. falcata") 
+D3_recov[12,]<- c("Epe.fal", "D3", "0", "Diameter", "E. falcata") 
+D3_recov[13,]<- c("Vir.sur", "D3", "0", "Diameter", "V. surinamensis") 
+D3_recov[14,]<- c("Vir.sur", "D3", "0", "Asat", "V. surinamensis") 
+D3_recov$Recovery <- as.numeric(D3_recov$Recovery)
+D3_recov <- left_join(D3_recov, survival_t101) %>%
+  mutate(new_Recovery = Recovery * (survival_rate/100))
+
+D3_resis <- all_resistance_df %>% filter(Treatment =="D3") 
+D3_resis <- left_join(D3_resis, survival_t71) %>%
+  mutate(new_Resistance = Resistance *(survival_rate/100))
+
+Resilience_D3 <- cbind(D3_recov, D3_resis)
+names(Resilience_D3)
+Resilience_D3 <- Resilience_D3[,c(1,2,4,5,7,14)]
+
+# Create the biplot D3 Asat
+Asat_D3 <- Resilience_D3 %>% filter(Trait == "Asat") %>%
+ggplot(aes(x = new_Resistance, y = new_Recovery)) +
+  geom_point(size= 4,aes(color = facet_label)) +
+#geom_text(aes(label = facet_label), vjust = 1.5) +
+ geom_text_repel(aes(label = facet_label), box.padding = 0.5, point.padding = 0.3, size = 7)+  # Use geom_text_repel
+    labs(
+       x = "Resistance Score",
+       y = "Recovery score")+
+   geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+   geom_vline(xintercept = 0, linetype = "dashed", color = "red") +
+   geom_segment( aes(x=0, xend=1,y=1, yend=0),linewidth = 1,color = "#34a0a4")+
+  ylim(c(-1,1))+
+  xlim(c(-1,1))+
+ guides(color = guide_legend(title = "Species"))+
+  theme_minimal(base_size = 22)+
+  theme(legend.text = element_text(face= "italic"))
+
+Diam_D3 <- Resilience_D3 %>% filter(Trait == "Diameter") %>%
+ggplot(aes(x = new_Resistance, y = new_Recovery)) +
+  geom_point(size= 4,aes(color = facet_label)) +
+#geom_text(aes(label = facet_label), vjust = 1.5) +
+ geom_text_repel(aes(label = facet_label), box.padding = 0.5, point.padding = 0.3, size = 7)+  # Use geom_text_repel
+    labs(
+       x = "Resistance Score",
+       y = "")+
+   geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+   geom_vline(xintercept = 0, linetype = "dashed", color = "red") +
+   geom_segment( aes(x=0, xend=1,y=1, yend=0),linewidth = 1,color = "#34a0a4")+
+  ylim(c(-1,1))+
+  xlim(c(-1,1))+
+  guides(color = guide_legend(title = "Species"))+
+  theme_minimal(base_size = 22)+
+  theme(legend.text = element_text(face= "italic"))
+Diam_D3  
+
+
+# Create a text grob for the title
+title_D3 <- "Extreme drought scenario"
+tgrob <- ggpubr::text_grob(title_D3,size = 24, color = "#DF5220")
+# Draw the text
+plot_1 <- as_ggplot(tgrob) + theme(plot.margin = margin(0,0,0,0, "cm"))
+
+Resilience_plot_D3 <- ggarrange(plot_1, NULL, Asat_D3, Diam_D3, ncol = 2, nrow = 2, labels = c("", "", "Asat", "Diameter"), legend = "bottom", common.legend = TRUE, heights = c(0.5,2,2), label.y = c(1.05,1.05),  font.label =  list(size = 20, face= "italic")) 
+Resilience_plot_D3
+
+Resilience_plot <- ggarrange(Resilience_plot_D2, Resilience_plot_D3, ncol=1, nrow= 2, common.legend = TRUE, legend = "bottom")
+Resilience_plot 
+
+ggsave(filename = "Resilience_plot.jpeg", plot = Resilience_plot, width = 15, height = 12)
+```
+
+
+#Resilience data
+```{r}
+Resilience <- rbind(Resilience_D2, Resilience_D3) %>% filter(Trait == "Asat")
+
+write.csv(x = Resilience, file = "Resilience.csv")
+resilience <- read.csv("Resilience.csv")
+```

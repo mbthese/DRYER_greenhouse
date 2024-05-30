@@ -1,0 +1,2889 @@
+---
+title: "Relative_Abundances"
+author: "Marion Boisseaux"
+date: "2023-07-17"
+output: html_document
+---
+```{r setup, include=FALSE}
+#Package nécessaire
+# install bioconductor dependencies
+#install.packages("BiocManager")
+#BiocManager::install("biomformat")
+
+# install metabaR package
+#install.packages("remotes")
+#remotes::install_github("metabaRfactory/metabaR")
+
+library(ape) #read fasta files
+library(ggplot2)
+library(ggpubr)
+library(reshape2)
+library(metabaR)
+library(readr)
+library(dplyr)
+library(tidyverse)
+library(tidyr)
+library(stringr)
+library(kableExtra)
+setwd("E:/DRYER_greenhouse/")
+```
+
+# 1 - Bacteria
+
+## phylum
+```{r}
+load("/DRYER_greenhouse/results/Metabarlist_serre_16S_AMVG51-230505_clean.Rdata")
+
+rownames(AMVG51_230505_16S_clean$samples) <- AMVG51_230505_16S_clean$samples$sample_id
+leaf <- AMVG51_230505_16S_clean
+
+#leaf <- subset_metabarlist(leaf, table = "samples", indices = leaf$samples$Time == c("t21", "t27", "t71"))
+
+# Aggregate the metabarlist at the class level
+leaf_phy <-  aggregate_motus(leaf, groups= leaf$motus$Phylum)
+
+leaf_phy$samples$Name <- NA
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Epe.fal"] <- "E. falcata"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Iry.hos"] <- "I. hostmannii"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Jac.cop"] <- "J. copaia"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Pte.off"] <- "P. officinalis"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Sym.off"] <- "S. globulifera"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Tac.mel"] <- "T. melinonii"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Vir.sur"] <- "V. surinamensis"
+
+EF_bac <- subset_metabarlist(leaf_phy, table = "samples", indices = leaf_phy$samples$Name == "E. falcata")
+EF_bac <- subset_metabarlist(EF_bac, table = "samples", indices = EF_bac$samples$Time %in% c("t21", "t27", "t71"))
+
+# Aggregate per organ/genus
+tmp <-  melt(aggregate(EF_bac$reads, by = list(EF_bac$samples$Treatment), sum))
+
+colnames(tmp) <- c("Treatment", "Phylum", "Value")
+
+
+# Calculate the total abundance per phylum
+phylum_abundance <- aggregate(Value ~ Phylum, data = tmp, sum)
+options(scipen = 999)
+total_sum <- sum(phylum_abundance$Value)
+phylum_proportions <- phylum_abundance %>% mutate(Proportion = Value / total_sum *100)
+phylum_proportions
+
+# Sort the data by the total abundance in descending order
+top_phyla <- head(phylum_abundance$Phylum[order(phylum_abundance$Value, decreasing = TRUE)],6)
+
+# Classify other phyla as 'Others'
+tmp <- tmp %>%
+  mutate(Phylum2 = ifelse(Phylum %in% top_phyla, paste0(Phylum), "Others"))
+
+# total abundance per species
+sample_abundance <- tmp %>%
+  group_by(Treatment) %>%
+  summarize(TotalValue = sum(Value))
+
+# Merge the total sample abundance with the data
+tmp <- merge(tmp, sample_abundance, by = "Treatment")
+
+# Calculate the relative abundances
+tmp$RelativeAbundance <- tmp$Value / tmp$TotalValue
+
+# Sort the data within each sample by increasing relative abundance
+tmp <- tmp %>%
+  group_by(Treatment) %>%
+  arrange(RelativeAbundance)
+
+tmp$Phylum2[which(tmp$Phylum2== "NA")] <- "unidentified"
+
+# Define the manual colors for six levels
+custom_colors13 <- c("#774C22", "#965326", 
+                     #"#FFE898", 
+                     "#C1A13E", 
+                     #"#5D641E",
+                     "#BAD0C4", #muco
+                     "#7CAED1", "#98D3F1", 
+                       "#EFEFBB", "#FFD34C")
+#custom_colors6 <- c("#dad7cd", "#386641", "#A7C957", "#a3b18a", "#B5E48C", "#432818")
+tmp_EF <- tmp
+#plot phyla
+EF_drought_taxo <- tmp %>%
+    #mutate(Name = gsub("_", " ", Name)) %>% 
+    ggplot(aes(x=Treatment, y=RelativeAbundance, fill=Phylum2)) +
+    geom_bar(position="stack", stat="identity") +
+    labs(x=NULL, y="", fill="Phylum") +
+    scale_fill_manual(values= custom_colors13) +
+    #scale_x_discrete(limits = rev(levels(as.factor(tmp$Treatment))))+
+    theme_bw() +
+    theme(legend.position = "none",axis.text.y = element_text(face = "italic")) +
+    ggtitle("E. falcata")+
+    theme(title = element_text(face= "italic"))
+    
+EF_drought_taxo 
+
+#I. hos
+
+IH_bac <- subset_metabarlist(leaf_phy, table = "samples", indices = leaf_phy$samples$Name == "I. hostmannii")
+IH_bac <- subset_metabarlist(IH_bac, table = "samples", indices = IH_bac$samples$Time %in% c("t21", "t27", "t71"))
+
+# Aggregate per organ/genus
+tmp <-  melt(aggregate(IH_bac$reads, by = list(IH_bac$samples$Treatment), sum))
+
+colnames(tmp) <- c("Treatment", "Phylum", "Value")
+
+
+# Calculate the total abundance per phylum
+phylum_abundance <- aggregate(Value ~ Phylum, data = tmp, sum)
+options(scipen = 999)
+total_sum <- sum(phylum_abundance$Value)
+phylum_proportions <- phylum_abundance %>% mutate(Proportion = Value / total_sum *100)
+phylum_proportions
+
+# Sort the data by the total abundance in descending order
+top_phyla <- head(phylum_abundance$Phylum[order(phylum_abundance$Value, decreasing = TRUE)],6)
+
+# Classify other phyla as 'Others'
+tmp <- tmp %>%
+  mutate(Phylum2 = ifelse(Phylum %in% top_phyla, paste0(Phylum), "Others"))
+
+# total abundance per species
+sample_abundance <- tmp %>%
+  group_by(Treatment) %>%
+  summarize(TotalValue = sum(Value))
+
+# Merge the total sample abundance with the data
+tmp <- merge(tmp, sample_abundance, by = "Treatment")
+
+# Calculate the relative abundances
+tmp$RelativeAbundance <- tmp$Value / tmp$TotalValue
+
+# Sort the data within each sample by increasing relative abundance
+tmp <- tmp %>%
+  group_by(Treatment) %>%
+  arrange(RelativeAbundance)
+
+tmp$Phylum2[which(tmp$Phylum2== "NA")] <- "unidentified"
+
+# Define the manual colors for six levels
+custom_colors13_ih <- c("#774C22", "#965326", 
+                     "#FFE898", 
+                     "#C1A13E", 
+                     #"#5D641E",
+                     "#BAD0C4", #muco
+                     "#7CAED1", "#98D3F1", 
+                       "#EFEFBB", "#FFD34C")
+#custom_colors6 <- c("#dad7cd", "#386641", "#A7C957", "#a3b18a", "#B5E48C", "#432818")
+tmp_IH <- tmp
+#plot phyla
+IH_drought_taxo <- tmp %>%
+    #mutate(Name = gsub("_", " ", Name)) %>% 
+    ggplot(aes(x=Treatment, y=RelativeAbundance, fill=Phylum2)) +
+    geom_bar(position="stack", stat="identity") +
+    labs(x=NULL, y="", fill="Phylum") +
+    scale_fill_manual(values= custom_colors13_ih) +
+    #scale_x_discrete(limits = rev(levels(as.factor(tmp$Treatment))))+
+    theme_bw() +
+    theme(legend.position = "none",axis.text.y = element_text(face = "italic")) +
+    ggtitle("I. hostmannii")+
+    theme(title = element_text(face= "italic"))
+    
+IH_drought_taxo 
+
+#jaccop
+
+JC_bac <- subset_metabarlist(leaf_phy, table = "samples", indices = leaf_phy$samples$Name == "J. copaia")
+JC_bac <- subset_metabarlist(JC_bac, table = "samples", indices = JC_bac$samples$Time %in% c("t21", "t27", "t71"))
+
+# Aggregate per organ/genus
+tmp <-  melt(aggregate(JC_bac$reads, by = list(JC_bac$samples$Treatment), sum))
+
+colnames(tmp) <- c("Treatment", "Phylum", "Value")
+
+
+# Calculate the total abundance per phylum
+phylum_abundance <- aggregate(Value ~ Phylum, data = tmp, sum)
+options(scipen = 999)
+total_sum <- sum(phylum_abundance$Value)
+phylum_proportions <- phylum_abundance %>% mutate(Proportion = Value / total_sum *100)
+phylum_proportions
+
+# Sort the data by the total abundance in descending order
+top_phyla <- head(phylum_abundance$Phylum[order(phylum_abundance$Value, decreasing = TRUE)],6)
+
+# Classify other phyla as 'Others'
+tmp <- tmp %>%
+  mutate(Phylum2 = ifelse(Phylum %in% top_phyla, paste0(Phylum), "Others"))
+
+# total abundance per species
+sample_abundance <- tmp %>%
+  group_by(Treatment) %>%
+  summarize(TotalValue = sum(Value))
+
+# Merge the total sample abundance with the data
+tmp <- merge(tmp, sample_abundance, by = "Treatment")
+
+# Calculate the relative abundances
+tmp$RelativeAbundance <- tmp$Value / tmp$TotalValue
+
+# Sort the data within each sample by increasing relative abundance
+tmp <- tmp %>%
+  group_by(Treatment) %>%
+  arrange(RelativeAbundance)
+
+tmp$Phylum2[which(tmp$Phylum2== "NA")] <- "unidentified"
+
+# Define the manual colors for six levels
+custom_colors13 <- c("#774C22", "#965326", 
+                     #"#FFE898", 
+                     "#C1A13E", 
+                     #"#5D641E",
+                     "#BAD0C4", #muco
+                     "#7CAED1", "#98D3F1", 
+                       "#EFEFBB", "#FFD34C")
+#custom_colors6 <- c("#dad7cd", "#386641", "#A7C957", "#a3b18a", "#B5E48C", "#432818")
+tmp_JC <- tmp
+#plot phyla
+JC_drought_taxo <- tmp %>%
+    #mutate(Name = gsub("_", " ", Name)) %>% 
+    ggplot(aes(x=Treatment, y=RelativeAbundance, fill=Phylum2)) +
+    geom_bar(position="stack", stat="identity") +
+    labs(x=NULL, y="", fill="Phylum") +
+    scale_fill_manual(values= custom_colors13) +
+    #scale_x_discrete(limits = rev(levels(as.factor(tmp$Treatment))))+
+    theme_bw() +
+    theme(legend.position = "none",axis.text.y = element_text(face = "italic")) +
+    ggtitle("J. copaia")+
+    theme(title = element_text(face= "italic"))
+    
+JC_drought_taxo
+
+#Pteoff
+PO_bac <- subset_metabarlist(leaf_phy, table = "samples", indices = leaf_phy$samples$Name == "P. officinalis")
+PO_bac <- subset_metabarlist(PO_bac, table = "samples", indices = PO_bac$samples$Time %in% c("t21", "t27", "t71"))
+
+# Aggregate per organ/genus
+tmp <-  melt(aggregate(PO_bac$reads, by = list(PO_bac$samples$Treatment), sum))
+
+colnames(tmp) <- c("Treatment", "Phylum", "Value")
+
+
+# Calculate the total abundance per phylum
+phylum_abundance <- aggregate(Value ~ Phylum, data = tmp, sum)
+options(scipen = 999)
+total_sum <- sum(phylum_abundance$Value)
+phylum_proportions <- phylum_abundance %>% mutate(Proportion = Value / total_sum *100)
+phylum_proportions
+
+# Sort the data by the total abundance in descending order
+top_phyla <- head(phylum_abundance$Phylum[order(phylum_abundance$Value, decreasing = TRUE)],6)
+
+# Classify other phyla as 'Others'
+tmp <- tmp %>%
+  mutate(Phylum2 = ifelse(Phylum %in% top_phyla, paste0(Phylum), "Others"))
+
+# total abundance per species
+sample_abundance <- tmp %>%
+  group_by(Treatment) %>%
+  summarize(TotalValue = sum(Value))
+
+# Merge the total sample abundance with the data
+tmp <- merge(tmp, sample_abundance, by = "Treatment")
+
+# Calculate the relative abundances
+tmp$RelativeAbundance <- tmp$Value / tmp$TotalValue
+
+# Sort the data within each sample by increasing relative abundance
+tmp <- tmp %>%
+  group_by(Treatment) %>%
+  arrange(RelativeAbundance)
+
+tmp$Phylum2[which(tmp$Phylum2== "NA")] <- "unidentified"
+
+# Define the manual colors for six levels
+custom_colors13 <- c("#774C22", "#965326", 
+                     #"#FFE898", 
+                     "#C1A13E", 
+                     #"#5D641E",
+                     "#BAD0C4", #muco
+                     "#7CAED1", "#98D3F1", 
+                       "#EFEFBB", "#FFD34C")
+#custom_colors6 <- c("#dad7cd", "#386641", "#A7C957", "#a3b18a", "#B5E48C", "#432818")
+tmp_PO <- tmp
+#plot phyla
+PO_drought_taxo <- tmp %>%
+    #mutate(Name = gsub("_", " ", Name)) %>% 
+    ggplot(aes(x=Treatment, y=RelativeAbundance, fill=Phylum2)) +
+    geom_bar(position="stack", stat="identity") +
+    labs(x=NULL, y="", fill="Phylum") +
+    scale_fill_manual(values= custom_colors13) +
+    #scale_x_discrete(limits = rev(levels(as.factor(tmp$Treatment))))+
+    theme_bw() +
+    theme(legend.position = "none",axis.text.y = element_text(face = "italic")) +
+    ggtitle("P. officinalis")+
+    theme(title = element_text(face= "italic"))
+    
+PO_drought_taxo 
+
+#Sym.glo
+
+SG_bac <- subset_metabarlist(leaf_phy, table = "samples", indices = leaf_phy$samples$Name == "S. globulifera")
+SG_bac <- subset_metabarlist(SG_bac, table = "samples", indices = SG_bac$samples$Time %in% c("t21", "t27", "t71"))
+
+# Aggregate per organ/genus
+tmp <-  melt(aggregate(SG_bac$reads, by = list(SG_bac$samples$Treatment), sum))
+
+colnames(tmp) <- c("Treatment", "Phylum", "Value")
+
+
+# Calculate the total abundance per phylum
+phylum_abundance <- aggregate(Value ~ Phylum, data = tmp, sum)
+options(scipen = 999)
+total_sum <- sum(phylum_abundance$Value)
+phylum_proportions <- phylum_abundance %>% mutate(Proportion = Value / total_sum *100)
+phylum_proportions
+
+# Sort the data by the total abundance in descending order
+top_phyla <- head(phylum_abundance$Phylum[order(phylum_abundance$Value, decreasing = TRUE)],6)
+
+# Classify other phyla as 'Others'
+tmp <- tmp %>%
+  mutate(Phylum2 = ifelse(Phylum %in% top_phyla, paste0(Phylum), "Others"))
+
+# total abundance per species
+sample_abundance <- tmp %>%
+  group_by(Treatment) %>%
+  summarize(TotalValue = sum(Value))
+
+# Merge the total sample abundance with the data
+tmp <- merge(tmp, sample_abundance, by = "Treatment")
+
+# Calculate the relative abundances
+tmp$RelativeAbundance <- tmp$Value / tmp$TotalValue
+
+# Sort the data within each sample by increasing relative abundance
+tmp <- tmp %>%
+  group_by(Treatment) %>%
+  arrange(RelativeAbundance)
+
+tmp$Phylum2[which(tmp$Phylum2== "NA")] <- "unidentified"
+
+# Define the manual colors for six levels
+custom_colors13 <- c("#774C22", "#965326", 
+                     #"#FFE898", 
+                     "#C1A13E", 
+                     #"#5D641E",
+                     "#BAD0C4", #muco
+                     "#7CAED1", "#98D3F1", 
+                       "#EFEFBB", "#FFD34C")
+#custom_colors6 <- c("#dad7cd", "#386641", "#A7C957", "#a3b18a", "#B5E48C", "#432818")
+tmp_SG <- tmp
+#plot phyla
+SG_drought_taxo <- tmp %>%
+    #mutate(Name = gsub("_", " ", Name)) %>% 
+    ggplot(aes(x=Treatment, y=RelativeAbundance, fill=Phylum2)) +
+    geom_bar(position="stack", stat="identity") +
+    labs(x=NULL, y="", fill="Phylum") +
+    scale_fill_manual(values= custom_colors13) +
+    #scale_x_discrete(limits = rev(levels(as.factor(tmp$Treatment))))+
+    theme_bw() +
+    theme(legend.position = "none",axis.text.y = element_text(face = "italic")) +
+    ggtitle("S. globulifera")+
+    theme(title = element_text(face= "italic"))
+    
+SG_drought_taxo 
+
+#T.mel
+TM_bac <- subset_metabarlist(leaf_phy, table = "samples", indices = leaf_phy$samples$Name == "T. melinonii")
+TM_bac <- subset_metabarlist(TM_bac, table = "samples", indices = TM_bac$samples$Time %in% c("t21", "t27", "t71"))
+
+# Aggregate per organ/genus
+tmp <-  melt(aggregate(TM_bac$reads, by = list(TM_bac$samples$Treatment), sum))
+
+colnames(tmp) <- c("Treatment", "Phylum", "Value")
+
+
+# Calculate the total abundance per phylum
+phylum_abundance <- aggregate(Value ~ Phylum, data = tmp, sum)
+options(scipen = 999)
+total_sum <- sum(phylum_abundance$Value)
+phylum_proportions <- phylum_abundance %>% mutate(Proportion = Value / total_sum *100)
+phylum_proportions
+
+# Sort the data by the total abundance in descending order
+top_phyla <- head(phylum_abundance$Phylum[order(phylum_abundance$Value, decreasing = TRUE)],6)
+
+# Classify other phyla as 'Others'
+tmp <- tmp %>%
+  mutate(Phylum2 = ifelse(Phylum %in% top_phyla, paste0(Phylum), "Others"))
+
+# total abundance per species
+sample_abundance <- tmp %>%
+  group_by(Treatment) %>%
+  summarize(TotalValue = sum(Value))
+
+# Merge the total sample abundance with the data
+tmp <- merge(tmp, sample_abundance, by = "Treatment")
+
+# Calculate the relative abundances
+tmp$RelativeAbundance <- tmp$Value / tmp$TotalValue
+
+# Sort the data within each sample by increasing relative abundance
+tmp <- tmp %>%
+  group_by(Treatment) %>%
+  arrange(RelativeAbundance)
+
+tmp$Phylum2[which(tmp$Phylum2== "NA")] <- "unidentified"
+
+# Define the manual colors for six levels
+custom_colors13_tm <- c("#774C22", "#965326", 
+                     "#FFE898", 
+                     "#C1A13E", #deinococcota
+                     #"#5D641E",
+                     "#BAD0C4", #muco
+                     "#7CAED1", "#98D3F1", 
+                       "#EFEFBB", "#FFD34C")
+#custom_colors6 <- c("#dad7cd", "#386641", "#A7C957", "#a3b18a", "#B5E48C", "#432818")
+tmp_TM <- tmp
+#plot phyla
+TM_drought_taxo <- tmp %>%
+    #mutate(Name = gsub("_", " ", Name)) %>% 
+    ggplot(aes(x=Treatment, y=RelativeAbundance, fill=Phylum2)) +
+    geom_bar(position="stack", stat="identity") +
+    labs(x=NULL, y="", fill="Phylum") +
+    scale_fill_manual(values= custom_colors13_tm) +
+    #scale_x_discrete(limits = rev(levels(as.factor(tmp$Treatment))))+
+    theme_bw() +
+    theme(legend.position = "none",axis.text.y = element_text(face = "italic")) +
+    ggtitle("T. melinonii")+
+    theme(title = element_text(face= "italic"))
+    
+TM_drought_taxo 
+
+#vir sur
+VS_bac <- subset_metabarlist(leaf_phy, table = "samples", indices = leaf_phy$samples$Name == "V. surinamensis")
+VS_bac <- subset_metabarlist(VS_bac, table = "samples", indices = VS_bac$samples$Time %in% c("t21", "t27", "t71"))
+
+# Aggregate per organ/genus
+tmp <-  melt(aggregate(VS_bac$reads, by = list(VS_bac$samples$Treatment), sum))
+
+colnames(tmp) <- c("Treatment", "Phylum", "Value")
+
+
+# Calculate the total abundance per phylum
+phylum_abundance <- aggregate(Value ~ Phylum, data = tmp, sum)
+options(scipen = 999)
+total_sum <- sum(phylum_abundance$Value)
+phylum_proportions <- phylum_abundance %>% mutate(Proportion = Value / total_sum *100)
+phylum_proportions
+
+# Sort the data by the total abundance in descending order
+top_phyla <- head(phylum_abundance$Phylum[order(phylum_abundance$Value, decreasing = TRUE)],6)
+
+# Classify other phyla as 'Others'
+tmp <- tmp %>%
+  mutate(Phylum2 = ifelse(Phylum %in% top_phyla, paste0(Phylum), "Others"))
+
+# total abundance per species
+sample_abundance <- tmp %>%
+  group_by(Treatment) %>%
+  summarize(TotalValue = sum(Value))
+
+# Merge the total sample abundance with the data
+tmp <- merge(tmp, sample_abundance, by = "Treatment")
+
+# Calculate the relative abundances
+tmp$RelativeAbundance <- tmp$Value / tmp$TotalValue
+
+# Sort the data within each sample by increasing relative abundance
+tmp <- tmp %>%
+  group_by(Treatment) %>%
+  arrange(RelativeAbundance)
+
+tmp$Phylum2[which(tmp$Phylum2== "NA")] <- "unidentified"
+
+# Define the manual colors for six levels
+custom_colors13_vs <- c("#774C22", "#965326", 
+                     "#FFE898", 
+                     "#C1A13E", 
+                     #"#5D641E",
+                     "#BAD0C4", #muco
+                     "#7CAED1", "#98D3F1", 
+                       "#EFEFBB", "#FFD34C")
+#custom_colors6 <- c("#dad7cd", "#386641", "#A7C957", "#a3b18a", "#B5E48C", "#432818")
+tmp_VS <- tmp
+#plot phyla
+VS_drought_taxo <- tmp %>%
+    #mutate(Name = gsub("_", " ", Name)) %>% 
+    ggplot(aes(x=Treatment, y=RelativeAbundance, fill=Phylum2)) +
+    geom_bar(position="stack", stat="identity") +
+    labs(x=NULL, y="", fill="Phylum") +
+    scale_fill_manual(values= custom_colors13_vs) +
+    #scale_x_discrete(limits = rev(levels(as.factor(tmp$Treatment))))+
+    theme_bw() +
+    theme(legend.position = "none",axis.text.y = element_text(face = "italic")) +
+    ggtitle("V. surinamensis")+
+    theme(title = element_text(face= "italic"))
+    
+VS_drought_taxo 
+```
+
+# combine all phylum
+```{r}
+
+#common legend
+Phylum <- c("Actinobacteriota", "Bacteroidota", "Chloroflexi", "Deinococcota", "Firmicutes","Others", "Proteobacteria", "Unidentified")
+
+value <- c(1,1,1,1,1,1,1,1)
+value2 <- c(2,3,4,5,6,7,8,9)
+
+legend_data <- data.frame(Phylum, value, value2) 
+
+custom_colors13_legend <- c("#774C22", "#965326", 
+                     "#FFE898", 
+                     "#C1A13E", 
+                     #"#5D641E",
+                     "#BAD0C4", #muco
+                     "#7CAED1", "#98D3F1", 
+                       "#EFEFBB", "#FFD34C")
+
+legend_plot <- legend_data %>%
+    ggplot(aes(x=value,y=value2, fill=Phylum)) +
+    geom_bar(position="stack", stat="identity") +
+    labs(x=NULL, y="", fill="Phylum") +
+    scale_fill_manual(values= custom_colors13_legend) +
+    theme_bw() +
+    theme(legend.position = "bottom", legend.box = "vertical", legend.direction = "vertical")
+
+legend <- get_legend(legend_plot)
+
+bac_taxo_drought <- ggarrange(EF_drought_taxo, IH_drought_taxo, JC_drought_taxo, PO_drought_taxo, SG_drought_taxo, TM_drought_taxo, VS_drought_taxo, as_ggplot(legend), nrow=2, ncol=4)
+
+ggsave(filename = "./results/microbio/bac_taxo_drought.jpeg", plot = bac_taxo_drought, width = 10, height = 6)
+```
+
+## combine data
+```{r}
+tmp_EF$Host <- "E. falcata"
+tmp_IH$Host <- "I. hostmannii"
+tmp_JC$Host <- "J. copaia"
+tmp_PO$Host <- "P. officinalis"
+tmp_SG$Host <- "S. globulifera"
+tmp_TM$Host <- "T. melinonii"
+tmp_VS$Host <- "V. surinamensis"
+phylum_drought <- rbind(tmp_EF, tmp_IH, tmp_JC, tmp_PO, tmp_SG, tmp_TM, tmp_VS)
+
+write.csv(x = phylum_drought, file = "phylum_drought_bacteria.csv")
+```
+
+
+## Order
+```{r old script, take next one}
+load("/DRYER_greenhouse/results/Metabarlist_serre_16S_AMVG51-230505_clean.Rdata")
+rownames(AMVG51_230505_16S_clean$samples) <- AMVG51_230505_16S_clean$samples$sample_id
+leaf <- AMVG51_230505_16S_clean
+
+
+#leaf <- subset_metabarlist(leaf, table = "samples",
+                        #  indices = leaf$samples$Time == c("t21", "t27", "t71"))
+
+
+leaf$motus$Phylum_Class_Order <- paste0(leaf$motus$Phylum, ";", " ", leaf$motus$Class, ";", " ",leaf$motus$Order)
+
+leaf$motus$Order <- paste0("o__",leaf$motus$Order)
+
+# Aggregate the metabarlist at the class level
+#leaf_order <-  aggregate_motus(leaf, groups= leaf$motus$Phylum_Class_Order)
+leaf_order <-  aggregate_motus(leaf, groups= leaf$motus$Order)
+
+leaf_order$samples$Name <- NA
+leaf_order$samples$Name[leaf_order$samples$Species == "Epe.fal"] <- "E. falcata"
+leaf_order$samples$Name[leaf_order$samples$Species == "Iry.hos"] <- "I. hostmannii"
+leaf_order$samples$Name[leaf_order$samples$Species == "Jac.cop"] <- "J. copaia"
+leaf_order$samples$Name[leaf_order$samples$Species == "Pte.off"] <- "P. officinalis"
+leaf_order$samples$Name[leaf_order$samples$Species == "Sym.off"] <- "S. globulifera"
+leaf_order$samples$Name[leaf_order$samples$Species == "Tac.mel"] <- "T. melinonii"
+leaf_order$samples$Name[leaf_order$samples$Species == "Vir.sur"] <- "V. surinamensis"
+
+# Aggregate per organ/genus
+
+tmp <-  melt(aggregate(leaf_order$reads, by = list(
+    paste(leaf_order$samples$Name,
+          leaf_order$samples$Treatment, sep = " | ")), sum))
+
+
+colnames(tmp) <- c("Name", "Order", "Value")
+
+# Calculate the total abundance per Class
+Order_abundance <- aggregate(Value ~ Order, data = tmp, sum)
+options(scipen = 999)
+total_sum <- sum(Order_abundance$Value)
+Order_proportions <- Order_abundance %>% mutate(Proportion = Value / total_sum *100)
+Order_proportions
+
+top_10_proportions <- Order_proportions %>% 
+  arrange(desc(Proportion)) %>% 
+  head(10)
+
+#       Order Value Proportion
+#   Order Value Proportion
+# 1      o__Burkholderiales 55286  32.213631
+# 2           o__Bacillales 16872   9.830850
+# 3     o__Flavobacteriales 12335   7.187265
+# 4      o__Lactobacillales 10489   6.111652
+# 5  o__Propionibacteriales 10236   5.964236
+# 6      o__Pseudomonadales  9206   5.364083
+# 7    o__Corynebacteriales  7988   4.654388
+# 8     o__Sphingomonadales  6501   3.787954
+# 9        o__Clostridiales  5925   3.452334
+# 10       o__Micrococcales  5005   2.916276
+#  
+
+
+# Sort the data by the total abundance in descending order
+top_phyla <- Order_abundance$Order[order(Order_abundance$Value, decreasing = TRUE)] %>% head(10)
+
+# Classify other phyla as 'Others'
+tmp <- tmp %>%
+  mutate(Order2 = ifelse(Order %in% top_phyla, paste0(Order), "Others"))
+
+# total abundance per species
+sample_abundance <- tmp %>%
+  group_by(Name) %>%
+  summarize(TotalValue = sum(Value))
+
+# Merge the total sample abundance with the data
+tmp <- merge(tmp, sample_abundance, by = "Name")
+
+# Calculate the relative abundances
+tmp$RelativeAbundance <- tmp$Value / tmp$TotalValue
+
+# Sort the data within each sample by increasing relative abundance
+tmp <- tmp %>%
+  group_by(Name) %>%
+  arrange(RelativeAbundance)
+
+tmp$Order2[which(tmp$Order== "o__NA")] <- "unidentified"
+
+#cool function to make names pretty
+simplify_A <- function(value) {
+  if (value == "Others") {
+    return("Others")
+  } else {
+    simplified <- sub("^.*?o__(\\w+).*?$", "o__\\1", value)
+    ifelse(grepl("NA", simplified), sub("; NA.*?$", "; unknown", simplified), simplified)
+  }
+}
+
+
+# Apply the function to create column B
+tmp$Order3 <- sapply(tmp$Order2, simplify_A)
+
+tmp <- tmp %>%
+  dplyr::select(-Order)%>%
+  rename(Order = Order3)
+
+# Define the manual colors for six levels
+custom_colors23<- c("#774C22", "#965326", 
+                     "#FFE898", 
+                     "#C1A13E", 
+                     "#5D641E",
+                     "#BAD0C4",
+                     "#7CAED1", "#98D3F1", 
+                       "#EFEFBB", "#FFD34C",
+                     "#dad7cd", "#386641", "#A7C957", "#a3b18a", "#B5E48C", "#432818","#F67E13", "#BC3853", "#F3E762", "#64146E", "#A36A69", "#fc03ec", "#a81513") 
+
+
+ggsave("./results/Order_bacteria.jpeg", Order, width = 8, height = 10)
+```
+
+
+```{r}
+load("/DRYER_greenhouse/results/Metabarlist_serre_16S_AMVG51-230505_clean.Rdata")
+rownames(AMVG51_230505_16S_clean$samples) <- AMVG51_230505_16S_clean$samples$sample_id
+leaf <- AMVG51_230505_16S_clean
+
+leaf$motus$Phylum_Class_Order <- paste0(leaf$motus$Phylum, ";", " ", leaf$motus$Class, ";", " ",leaf$motus$Order)
+
+leaf$motus$Order <- paste0("o__",leaf$motus$Order)
+
+
+leaf$samples <- leaf$samples %>%
+   mutate(Period = case_when(
+      Treatment == "D1" &  Time == "t21" ~ "D1",
+      Treatment == "D2" &  Time == "t27" ~ "D2",
+      Treatment == "D3" &  Time == "t71" ~ "D3",
+      Treatment == "D1" &  Time == "t51" ~ "R1",
+      Treatment == "D2" &  Time == "t57" ~ "R2",
+      Treatment == "D3" &  Time == "t101" ~ "R3",
+      TRUE                      ~ "C0"
+    )
+  )
+
+# Aggregate the metabarlist at the class level
+#leaf_order <-  aggregate_motus(leaf, groups= leaf$motus$Phylum_Class_Order)
+leaf_order <-  aggregate_motus(leaf, groups= leaf$motus$Order)
+
+leaf_order$samples$Name <- NA
+leaf_order$samples$Name[leaf_order$samples$Species == "Epe.fal"] <- "E. falcata"
+leaf_order$samples$Name[leaf_order$samples$Species == "Iry.hos"] <- "I. hostmannii"
+leaf_order$samples$Name[leaf_order$samples$Species == "Jac.cop"] <- "J. copaia"
+leaf_order$samples$Name[leaf_order$samples$Species == "Pte.off"] <- "P. officinalis"
+leaf_order$samples$Name[leaf_order$samples$Species == "Sym.off"] <- "S. globulifera"
+leaf_order$samples$Name[leaf_order$samples$Species == "Tac.mel"] <- "T. melinonii"
+leaf_order$samples$Name[leaf_order$samples$Species == "Vir.sur"] <- "V. surinamensis"
+
+
+#ef-------
+EF_bac <- subset_metabarlist(leaf_order, table = "samples", indices = leaf_order$samples$Name == "E. falcata")
+#EF_bac <- subset_metabarlist(EF_bac, table = "samples", indices = EF_bac$samples$Time %in% c("t21", "t27", "t71"))
+
+# Aggregate per organ/genus
+tmp <-  melt(aggregate(EF_bac$reads, by = list(EF_bac$samples$Period), sum))
+
+colnames(tmp) <- c("Period", "Order", "Value")
+
+
+# Calculate the total abundance per phylum
+Order_abundance <- aggregate(Value ~ Order, data = tmp, sum)
+options(scipen = 999)
+total_sum <- sum(Order_abundance$Value)
+Order_proportions <- Order_abundance %>% mutate(Proportion = Value / total_sum *100)
+Order_proportions
+
+# Sort the data by the total abundance in descending order
+top_order <- head(Order_abundance$Order[order(Order_abundance$Value, decreasing = TRUE)],15)
+
+# Classify other phyla as 'Others'
+tmp <- tmp %>%
+  mutate(Order2 = ifelse(Order %in% top_order, paste0(Order), "Others"))
+
+# total abundance per species
+sample_abundance <- tmp %>%
+  group_by(Period) %>%
+  summarize(TotalValue = sum(Value))
+
+# Merge the total sample abundance with the data
+tmp <- merge(tmp, sample_abundance, by = "Period")
+
+# Calculate the relative abundances
+tmp$RelativeAbundance <- tmp$Value / tmp$TotalValue
+
+# Sort the data within each sample by increasing relative abundance
+tmp <- tmp %>%
+  group_by(Period) %>%
+  arrange(RelativeAbundance)
+
+tmp$Order2[which(tmp$Order2== "NA")] <- "unidentified"
+
+# Define the manual colors for six levels
+custom_colors23<- c("#774C22", "#965326", 
+                     "#FFE898", 
+                     "#C1A13E", 
+                     "#5D641E",
+                     "#BAD0C4",
+                     "#7CAED1", "#98D3F1", 
+                       "#EFEFBB", "#FFD34C",
+                     "#dad7cd", "#386641", "#A7C957", "#a3b18a", "#B5E48C", "#432818","#F67E13", "#BC3853", "#F3E762", "#64146E", "#A36A69", "#fc03ec", "#a81513") 
+tmp_EF <- tmp
+
+#I. hos-------------
+IH_bac <- subset_metabarlist(leaf_order, table = "samples", indices = leaf_order$samples$Name == "I. hostmannii")
+#IH_bac <- subset_metabarlist(IH_bac, table = "samples", indices = IH_bac$samples$Time %in% c("t21", "t27", "t71"))
+tmp <-  melt(aggregate(IH_bac$reads, by = list(IH_bac$samples$Period), sum))
+colnames(tmp) <- c("Period", "Order", "Value")
+Order_abundance <- aggregate(Value ~ Order, data = tmp, sum)
+options(scipen = 999)
+total_sum <- sum(Order_abundance$Value)
+Order_proportions <- Order_abundance %>% mutate(Proportion = Value / total_sum *100)
+Order_proportions
+top_Order <- head(Order_abundance$Order[order(Order_abundance$Value, decreasing = TRUE)],15)
+tmp <- tmp %>%
+  mutate(Order2 = ifelse(Order %in% top_Order, paste0(Order), "Others"))
+sample_abundance <- tmp %>%
+  group_by(Period) %>%
+  summarize(TotalValue = sum(Value))
+tmp <- merge(tmp, sample_abundance, by = "Period")
+tmp$RelativeAbundance <- tmp$Value / tmp$TotalValue
+tmp <- tmp %>%
+  group_by(Period) %>%
+  arrange(RelativeAbundance)
+tmp$Order2[which(tmp$Order2== "NA")] <- "unidentified"
+tmp_IH <- tmp
+
+#jaccop-------------
+JC_bac <- subset_metabarlist(leaf_order, table = "samples", indices = leaf_order$samples$Name == "J. copaia")
+#JC_bac <- subset_metabarlist(JC_bac, table = "samples", indices = JC_bac$samples$Time %in% c("t21", "t27", "t71"))
+tmp <-  melt(aggregate(JC_bac$reads, by = list(JC_bac$samples$Period), sum))
+colnames(tmp) <- c("Period", "Order", "Value")
+Order_abundance <- aggregate(Value ~ Order, data = tmp, sum)
+options(scipen = 999)
+total_sum <- sum(Order_abundance$Value)
+Order_proportions <- Order_abundance %>% mutate(Proportion = Value / total_sum *100)
+Order_proportions
+top_Order <- head(Order_abundance$Order[order(Order_abundance$Value, decreasing = TRUE)],15)
+tmp <- tmp %>%
+  mutate(Order2 = ifelse(Order %in% top_Order, paste0(Order), "Others"))
+sample_abundance <- tmp %>%
+  group_by(Period) %>%
+  summarize(TotalValue = sum(Value))
+tmp <- merge(tmp, sample_abundance, by = "Period")
+tmp$RelativeAbundance <- tmp$Value / tmp$TotalValue
+tmp <- tmp %>%
+  group_by(Period) %>%
+  arrange(RelativeAbundance)
+tmp$Order2[which(tmp$Order2== "NA")] <- "unidentified"
+tmp_JC <- tmp
+#Pteoff-----------
+PO_bac <- subset_metabarlist(leaf_order, table = "samples", indices = leaf_order$samples$Name == "P. officinalis")
+#PO_bac <- subset_metabarlist(PO_bac, table = "samples", indices = PO_bac$samples$Time %in% c("t21", "t27", "t71"))
+tmp <-  melt(aggregate(PO_bac$reads, by = list(PO_bac$samples$Period), sum))
+colnames(tmp) <- c("Period", "Order", "Value")
+Order_abundance <- aggregate(Value ~ Order, data = tmp, sum)
+options(scipen = 999)
+total_sum <- sum(Order_abundance$Value)
+Order_proportions <- Order_abundance %>% mutate(Proportion = Value / total_sum *100)
+Order_proportions
+top_Order <- head(Order_abundance$Order[order(Order_abundance$Value, decreasing = TRUE)],15)
+tmp <- tmp %>%
+  mutate(Order2 = ifelse(Order %in% top_Order, paste0(Order), "Others"))
+sample_abundance <- tmp %>%
+  group_by(Period) %>%
+  summarize(TotalValue = sum(Value))
+tmp <- merge(tmp, sample_abundance, by = "Period")
+tmp$RelativeAbundance <- tmp$Value / tmp$TotalValue
+tmp <- tmp %>%
+  group_by(Period) %>%
+  arrange(RelativeAbundance)
+tmp$Order2[which(tmp$Order2== "NA")] <- "unidentified"
+tmp_PO <- tmp
+#Sym.glo
+SG_bac <- subset_metabarlist(leaf_order, table = "samples", indices = leaf_order$samples$Name == "S. globulifera")
+#SG_bac <- subset_metabarlist(SG_bac, table = "samples", indices = SG_bac$samples$Time %in% c("t21", "t27", "t71"))
+tmp <-  melt(aggregate(SG_bac$reads, by = list(SG_bac$samples$Period), sum))
+colnames(tmp) <- c("Period", "Order", "Value")
+Order_abundance <- aggregate(Value ~ Order, data = tmp, sum)
+options(scipen = 999)
+total_sum <- sum(Order_abundance$Value)
+Order_proportions <- Order_abundance %>% mutate(Proportion = Value / total_sum *100)
+Order_proportions
+top_Order <- head(Order_abundance$Order[order(Order_abundance$Value, decreasing = TRUE)],15)
+tmp <- tmp %>%
+  mutate(Order2 = ifelse(Order %in% top_Order, paste0(Order), "Others"))
+sample_abundance <- tmp %>%
+  group_by(Period) %>%
+  summarize(TotalValue = sum(Value))
+tmp <- merge(tmp, sample_abundance, by = "Period")
+tmp$RelativeAbundance <- tmp$Value / tmp$TotalValue
+tmp <- tmp %>%
+  group_by(Period) %>%
+  arrange(RelativeAbundance)
+tmp$Order2[which(tmp$Order2== "NA")] <- "unidentified"
+tmp_SG <- tmp
+#T.mel----------------
+TM_bac <- subset_metabarlist(leaf_order, table = "samples", indices = leaf_order$samples$Name == "T. melinonii")
+#TM_bac <- subset_metabarlist(TM_bac, table = "samples", indices = TM_bac$samples$Time %in% c("t21", "t27", "t71"))
+tmp <-  melt(aggregate(TM_bac$reads, by = list(TM_bac$samples$Period), sum))
+colnames(tmp) <- c("Period", "Order", "Value")
+Order_abundance <- aggregate(Value ~ Order, data = tmp, sum)
+options(scipen = 999)
+total_sum <- sum(Order_abundance$Value)
+Order_proportions <- Order_abundance %>% mutate(Proportion = Value / total_sum *100)
+Order_proportions
+top_Order <- head(Order_abundance$Order[order(Order_abundance$Value, decreasing = TRUE)],15)
+tmp <- tmp %>%
+  mutate(Order2 = ifelse(Order %in% top_Order, paste0(Order), "Others"))
+sample_abundance <- tmp %>%
+  group_by(Period) %>%
+  summarize(TotalValue = sum(Value))
+tmp <- merge(tmp, sample_abundance, by = "Period")
+tmp$RelativeAbundance <- tmp$Value / tmp$TotalValue
+tmp <- tmp %>%
+  group_by(Period) %>%
+  arrange(RelativeAbundance)
+tmp$Order2[which(tmp$Order2== "NA")] <- "unidentified"
+tmp_TM <- tmp
+
+#vir sur------
+VS_bac <- subset_metabarlist(leaf_order, table = "samples", indices = leaf_order$samples$Name == "V. surinamensis")
+#VS_bac <- subset_metabarlist(VS_bac, table = "samples", indices = VS_bac$samples$Time %in% c("t21", "t27", "t71"))
+tmp <-  melt(aggregate(VS_bac$reads, by = list(VS_bac$samples$Period), sum))
+colnames(tmp) <- c("Period", "Order", "Value")
+Order_abundance <- aggregate(Value ~ Order, data = tmp, sum)
+options(scipen = 999)
+total_sum <- sum(Order_abundance$Value)
+Order_proportions <- Order_abundance %>% mutate(Proportion = Value / total_sum *100)
+Order_proportions
+top_Order <- head(Order_abundance$Order[order(Order_abundance$Value, decreasing = TRUE)],15)
+tmp <- tmp %>%
+  mutate(Order2 = ifelse(Order %in% top_Order, paste0(Order), "Others"))
+sample_abundance <- tmp %>%
+  group_by(Period) %>%
+  summarize(TotalValue = sum(Value))
+tmp <- merge(tmp, sample_abundance, by = "Period")
+tmp$RelativeAbundance <- tmp$Value / tmp$TotalValue
+tmp <- tmp %>%
+  group_by(Period) %>%
+  arrange(RelativeAbundance)
+tmp$Order2[which(tmp$Order2== "NA")] <- "unidentified"
+tmp_VS <- tmp
+```
+
+#combine order
+```{r}
+tmp_EF$Host <- "E. falcata"
+tmp_IH$Host <- "I. hostmannii"
+tmp_JC$Host <- "J. copaia"
+tmp_PO$Host <- "P. officinalis"
+tmp_SG$Host <- "S. globulifera"
+tmp_TM$Host <- "T. melinonii"
+tmp_VS$Host <- "V. surinamensis"
+order <- rbind(tmp_EF, tmp_IH, tmp_JC, tmp_PO, tmp_SG, tmp_TM, tmp_VS)
+
+custom_colors23<- c("#774C22", "#965326", 
+                     "#FFE898", 
+                     "#C1A13E", 
+                     "#5D641E",
+                     "#BAD0C4",
+                     "#7CAED1", "#98D3F1", 
+                       "#EFEFBB", "#FFD34C",
+                     "#dad7cd", "#386641", "#A7C957", "#a3b18a", "#B5E48C", "#432818","#F67E13", "#BC3853", "#F3E762", "#64146E", "#A36A69", "#fc03ec", "#a81513") 
+
+#plot order
+
+plot_order_bac <- order %>%
+  ggplot(aes(x = Period, y = RelativeAbundance, fill = Order2)) +
+  geom_bar(position = "stack", stat = "identity") +
+  labs(x = NULL, y = "", fill = "Order") +
+  scale_fill_manual(values = custom_colors23) +
+  theme_bw() +
+  theme(
+    legend.position = "bottom",
+    legend.title = element_text(hjust = 0.5),
+     legend.direction = "vertical",  # Make the legend vertical
+    legend.box = "vertical",  # Make the legend box vertical
+    axis.text.y = element_text(face = "italic"),
+    legend.key = element_rect(fill = "white"),
+    strip.text = element_text(face = "italic", size = 13),
+    strip.background = element_rect(fill = "white", color = "black", size = 0.5),  # Adding a white background to facet labels
+   panel.border = element_blank() ) +
+  theme(strip.background = element_blank())+
+  guides(fill=guide_legend(ncol=4))+
+  facet_wrap(~Host, ncol = 7)  # Setting 4 columns for facets
+
+   
+plot_order_bac
+
+ggsave(filename = "./results/microbio/bac_taxo_drought_order.jpeg", plot = plot_order, width = 10, height = 6)
+```
+
+#RECOVERY
+
+##phylum
+```{r}
+load("/DRYER_greenhouse/results/Metabarlist_serre_16S_AMVG51-230505_clean.Rdata")
+
+rownames(AMVG51_230505_16S_clean$samples) <- AMVG51_230505_16S_clean$samples$sample_id
+leaf <- AMVG51_230505_16S_clean
+
+# Aggregate the metabarlist at the class level
+leaf_phy <-  aggregate_motus(leaf, groups= leaf$motus$Phylum)
+
+leaf_phy$samples$Name <- NA
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Epe.fal"] <- "E. falcata"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Iry.hos"] <- "I. hostmannii"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Jac.cop"] <- "J. copaia"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Pte.off"] <- "P. officinalis"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Sym.off"] <- "S. globulifera"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Tac.mel"] <- "T. melinonii"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Vir.sur"] <- "V. surinamensis"
+
+EF_bac <- subset_metabarlist(leaf_phy, table = "samples", indices = leaf_phy$samples$Name == "E. falcata")
+EF_bac <- subset_metabarlist(EF_bac, table = "samples", indices = EF_bac$samples$Time %in% c("t21", "t27", "t71", "t51", "t57", "t101"))
+
+EF_bac$samples <- EF_bac$samples %>%
+   mutate(Transition = ifelse(Treatment == "C0", "C0", "Other"))
+
+EF_bac$samples <- EF_bac$samples %>%
+   mutate(Period = case_when(
+      Transition == "Other" &  Time == "t21" ~ "D1",
+      Transition == "Other" &  Time == "t27" ~ "D2",
+      Transition == "Other" &  Time == "t71" ~ "D3",
+      Transition == "Other" &  Time == "t51" ~ "Recovery D1",
+      Transition == "Other" &  Time == "t57" ~ "Recovery D2",
+      Transition == "Other" &  Time == "t101" ~ "Recovery D3",
+      TRUE                      ~ "Control"
+    )
+  )
+
+
+# Aggregate per organ/genus
+tmp <-  melt(aggregate(EF_bac$reads, by = list(EF_bac$samples$Period), sum))
+
+colnames(tmp) <- c("Period", "Phylum", "Value")
+
+
+# Calculate the total abundance per phylum
+phylum_abundance <- aggregate(Value ~ Phylum, data = tmp, sum)
+options(scipen = 999)
+total_sum <- sum(phylum_abundance$Value)
+phylum_proportions <- phylum_abundance %>% mutate(Proportion = Value / total_sum *100)
+phylum_proportions
+
+# Sort the data by the total abundance in descending order
+top_phyla <- head(phylum_abundance$Phylum[order(phylum_abundance$Value, decreasing = TRUE)],6)
+
+# Classify other phyla as 'Others'
+tmp <- tmp %>%
+  mutate(Phylum2 = ifelse(Phylum %in% top_phyla, paste0(Phylum), "Others"))
+
+# total abundance per species
+sample_abundance <- tmp %>%
+  group_by(Period) %>%
+  summarize(TotalValue = sum(Value))
+
+# Merge the total sample abundance with the data
+tmp <- merge(tmp, sample_abundance, by = "Period")
+
+# Calculate the relative abundances
+tmp$RelativeAbundance <- tmp$Value / tmp$TotalValue
+
+# Sort the data within each sample by increasing relative abundance
+tmp <- tmp %>%
+  group_by(Period) %>%
+  arrange(RelativeAbundance)
+
+tmp$Phylum2[which(tmp$Phylum2== "NA")] <- "unidentified"
+
+# Define the manual colors for six levels
+custom_colors13 <- c("#774C22", "#965326", 
+                     #"#FFE898", 
+                     "#C1A13E", 
+                     #"#5D641E",
+                     "#BAD0C4", #muco
+                     "#7CAED1", "#98D3F1", 
+                       "#EFEFBB", "#FFD34C")
+#custom_colors6 <- c("#dad7cd", "#386641", "#A7C957", "#a3b18a", "#B5E48C", "#432818")
+
+tmp_EF <- tmp
+tmp_EF$Period <- factor(tmp_EF$Period, levels=c('Control', 'D1', 'D2', 'Recovery D1', 'Recovery D2'))
+
+#plot phyla
+EF_taxo <- tmp_EF %>%
+    ggplot(aes(x=Period, y=RelativeAbundance, fill=Phylum2)) +
+    geom_bar(position="stack", stat="identity") +
+    labs(x=NULL, y="", fill="Phylum") +
+    scale_fill_manual(values= custom_colors13) +
+    #scale_x_discrete(limits = rev(levels(as.factor(tmp$Treatment))))+
+    theme_bw() +
+    theme(legend.position = "none",axis.text.y = element_text(face = "italic")) +
+    ggtitle("E. falcata")+
+    theme(title = element_text(face= "italic"))
+    
+EF_taxo 
+
+#I. hos-------------
+
+IH_bac <- subset_metabarlist(leaf_phy, table = "samples", indices = leaf_phy$samples$Name == "I. hostmannii")
+IH_bac <- subset_metabarlist(IH_bac, table = "samples", indices = IH_bac$samples$Time %in% c("t21", "t27", "t71", "t51", "t57", "t101"))
+IH_bac$samples <- IH_bac$samples %>%
+   mutate(Transition = ifelse(Treatment == "C0", "C0", "Other"))
+IH_bac$samples <- IH_bac$samples %>%
+   mutate(Period = case_when(
+      Transition == "Other" &  Time == "t21" ~ "D1",
+      Transition == "Other" &  Time == "t27" ~ "D2",
+      Transition == "Other" &  Time == "t71" ~ "D3",
+      Transition == "Other" &  Time == "t51" ~ "Recovery D1",
+      Transition == "Other" &  Time == "t57" ~ "Recovery D2",
+      Transition == "Other" &  Time == "t101" ~ "Recovery D3",
+      TRUE                      ~ "Control"
+    )
+  )
+
+tmp <-  melt(aggregate(IH_bac$reads, by = list(IH_bac$samples$Period), sum))
+colnames(tmp) <- c("Period", "Phylum", "Value")
+
+phylum_abundance <- aggregate(Value ~ Phylum, data = tmp, sum)
+options(scipen = 999)
+total_sum <- sum(phylum_abundance$Value)
+phylum_proportions <- phylum_abundance %>% mutate(Proportion = Value / total_sum *100)
+phylum_proportions
+top_phyla <- head(phylum_abundance$Phylum[order(phylum_abundance$Value, decreasing = TRUE)],6)
+tmp <- tmp %>%
+  mutate(Phylum2 = ifelse(Phylum %in% top_phyla, paste0(Phylum), "Others"))
+sample_abundance <- tmp %>%
+  group_by(Period) %>%
+  summarize(TotalValue = sum(Value))
+tmp <- merge(tmp, sample_abundance, by = "Period")
+tmp$RelativeAbundance <- tmp$Value / tmp$TotalValue
+tmp <- tmp %>%
+  group_by(Period) %>%
+  arrange(RelativeAbundance)
+tmp$Phylum2[which(tmp$Phylum2== "NA")] <- "unidentified"
+custom_colors13 <- c("#774C22", "#965326", 
+                     "#FFE898", 
+                     "#C1A13E", 
+                     "#5D641E",
+                     "#BAD0C4", #muco
+                     "#7CAED1", "#98D3F1", 
+                       "#IHIHBB", "#FFD34C")
+
+tmp_IH <- tmp
+
+#jaccop-------------
+
+JC_bac <- subset_metabarlist(leaf_phy, table = "samples", indices = leaf_phy$samples$Name == "J. copaia")
+JC_bac <- subset_metabarlist(JC_bac, table = "samples", indices = JC_bac$samples$Time %in% c("t21", "t27", "t71", "t51", "t57", "t101"))
+JC_bac$samples <- JC_bac$samples %>%
+   mutate(Transition = ifelse(Treatment == "C0", "C0", "Other"))
+JC_bac$samples <- JC_bac$samples %>%
+   mutate(Period = case_when(
+      Transition == "Other" &  Time == "t21" ~ "D1",
+      Transition == "Other" &  Time == "t27" ~ "D2",
+      Transition == "Other" &  Time == "t71" ~ "D3",
+      Transition == "Other" &  Time == "t51" ~ "Recovery D1",
+      Transition == "Other" &  Time == "t57" ~ "Recovery D2",
+      Transition == "Other" &  Time == "t101" ~ "Recovery D3",
+      TRUE                      ~ "Control"
+    )
+  )
+
+tmp <-  melt(aggregate(JC_bac$reads, by = list(JC_bac$samples$Period), sum))
+colnames(tmp) <- c("Period", "Phylum", "Value")
+
+phylum_abundance <- aggregate(Value ~ Phylum, data = tmp, sum)
+options(scipen = 999)
+total_sum <- sum(phylum_abundance$Value)
+phylum_proportions <- phylum_abundance %>% mutate(Proportion = Value / total_sum *100)
+phylum_proportions
+top_phyla <- head(phylum_abundance$Phylum[order(phylum_abundance$Value, decreasing = TRUE)],6)
+tmp <- tmp %>%
+  mutate(Phylum2 = ifelse(Phylum %in% top_phyla, paste0(Phylum), "Others"))
+sample_abundance <- tmp %>%
+  group_by(Period) %>%
+  summarize(TotalValue = sum(Value))
+tmp <- merge(tmp, sample_abundance, by = "Period")
+tmp$RelativeAbundance <- tmp$Value / tmp$TotalValue
+tmp <- tmp %>%
+  group_by(Period) %>%
+  arrange(RelativeAbundance)
+tmp$Phylum2[which(tmp$Phylum2== "NA")] <- "unidentified"
+custom_colors13 <- c("#774C22", "#965326", 
+                     "#FFE898", 
+                     "#C1A13E", 
+                     "#5D641E",
+                     "#BAD0C4", #muco
+                     "#7CAED1", "#98D3F1", 
+                       "#JCJCBB", "#FFD34C")
+
+tmp_JC <- tmp
+
+#Pteoff-----------
+
+PO_bac <- subset_metabarlist(leaf_phy, table = "samples", indices = leaf_phy$samples$Name == "P. officinalis")
+PO_bac <- subset_metabarlist(PO_bac, table = "samples", indices = PO_bac$samples$Time %in% c("t21", "t27", "t71", "t51", "t57", "t101"))
+PO_bac$samples <- PO_bac$samples %>%
+   mutate(Transition = ifelse(Treatment == "C0", "C0", "Other"))
+PO_bac$samples <- PO_bac$samples %>%
+   mutate(Period = case_when(
+      Transition == "Other" &  Time == "t21" ~ "D1",
+      Transition == "Other" &  Time == "t27" ~ "D2",
+      Transition == "Other" &  Time == "t71" ~ "D3",
+      Transition == "Other" &  Time == "t51" ~ "Recovery D1",
+      Transition == "Other" &  Time == "t57" ~ "Recovery D2",
+      Transition == "Other" &  Time == "t101" ~ "Recovery D3",
+      TRUE                      ~ "Control"
+    )
+  )
+
+tmp <-  melt(aggregate(PO_bac$reads, by = list(PO_bac$samples$Period), sum))
+colnames(tmp) <- c("Period", "Phylum", "Value")
+
+phylum_abundance <- aggregate(Value ~ Phylum, data = tmp, sum)
+options(scipen = 999)
+total_sum <- sum(phylum_abundance$Value)
+phylum_proportions <- phylum_abundance %>% mutate(Proportion = Value / total_sum *100)
+phylum_proportions
+top_phyla <- head(phylum_abundance$Phylum[order(phylum_abundance$Value, decreasing = TRUE)],6)
+tmp <- tmp %>%
+  mutate(Phylum2 = ifelse(Phylum %in% top_phyla, paste0(Phylum), "Others"))
+sample_abundance <- tmp %>%
+  group_by(Period) %>%
+  summarize(TotalValue = sum(Value))
+tmp <- merge(tmp, sample_abundance, by = "Period")
+tmp$RelativeAbundance <- tmp$Value / tmp$TotalValue
+tmp <- tmp %>%
+  group_by(Period) %>%
+  arrange(RelativeAbundance)
+tmp$Phylum2[which(tmp$Phylum2== "NA")] <- "unidentified"
+custom_colors13 <- c("#774C22", "#965326", 
+                     "#FFE898", 
+                     "#C1A13E", 
+                     "#5D641E",
+                     "#BAD0C4", #muco
+                     "#7CAED1", "#98D3F1", 
+                       "#POPOBB", "#FFD34C")
+
+tmp_PO <- tmp
+
+#Sym.glo
+
+SG_bac <- subset_metabarlist(leaf_phy, table = "samples", indices = leaf_phy$samples$Name == "S. globulifera")
+SG_bac <- subset_metabarlist(SG_bac, table = "samples", indices = SG_bac$samples$Time %in% c("t21", "t27", "t71", "t51", "t57", "t101"))
+SG_bac$samples <- SG_bac$samples %>%
+   mutate(Transition = ifelse(Treatment == "C0", "C0", "Other"))
+SG_bac$samples <- SG_bac$samples %>%
+   mutate(Period = case_when(
+      Transition == "Other" &  Time == "t21" ~ "D1",
+      Transition == "Other" &  Time == "t27" ~ "D2",
+      Transition == "Other" &  Time == "t71" ~ "D3",
+      Transition == "Other" &  Time == "t51" ~ "Recovery D1",
+      Transition == "Other" &  Time == "t57" ~ "Recovery D2",
+      Transition == "Other" &  Time == "t101" ~ "Recovery D3",
+      TRUE                      ~ "Control"
+    )
+  )
+
+tmp <-  melt(aggregate(SG_bac$reads, by = list(SG_bac$samples$Period), sum))
+colnames(tmp) <- c("Period", "Phylum", "Value")
+
+phylum_abundance <- aggregate(Value ~ Phylum, data = tmp, sum)
+options(scipen = 999)
+total_sum <- sum(phylum_abundance$Value)
+phylum_proportions <- phylum_abundance %>% mutate(Proportion = Value / total_sum *100)
+phylum_proportions
+top_phyla <- head(phylum_abundance$Phylum[order(phylum_abundance$Value, decreasing = TRUE)],6)
+tmp <- tmp %>%
+  mutate(Phylum2 = ifelse(Phylum %in% top_phyla, paste0(Phylum), "Others"))
+sample_abundance <- tmp %>%
+  group_by(Period) %>%
+  summarize(TotalValue = sum(Value))
+tmp <- merge(tmp, sample_abundance, by = "Period")
+tmp$RelativeAbundance <- tmp$Value / tmp$TotalValue
+tmp <- tmp %>%
+  group_by(Period) %>%
+  arrange(RelativeAbundance)
+tmp$Phylum2[which(tmp$Phylum2== "NA")] <- "unidentified"
+custom_colors13 <- c("#774C22", "#965326", 
+                     "#FFE898", 
+                     "#C1A13E", 
+                     "#5D641E",
+                     "#BAD0C4", #muco
+                     "#7CAED1", "#98D3F1", 
+                       "#SGSGBB", "#FFD34C")
+
+tmp_SG <- tmp
+
+#T.mel----------------
+
+TM_bac <- subset_metabarlist(leaf_phy, table = "samples", indices = leaf_phy$samples$Name == "T. melinonii")
+TM_bac <- subset_metabarlist(TM_bac, table = "samples", indices = TM_bac$samples$Time %in% c("t21", "t27", "t71", "t51", "t57", "t101"))
+TM_bac$samples <- TM_bac$samples %>%
+   mutate(Transition = ifelse(Treatment == "C0", "C0", "Other"))
+TM_bac$samples <- TM_bac$samples %>%
+   mutate(Period = case_when(
+      Transition == "Other" &  Time == "t21" ~ "D1",
+      Transition == "Other" &  Time == "t27" ~ "D2",
+      Transition == "Other" &  Time == "t71" ~ "D3",
+      Transition == "Other" &  Time == "t51" ~ "Recovery D1",
+      Transition == "Other" &  Time == "t57" ~ "Recovery D2",
+      Transition == "Other" &  Time == "t101" ~ "Recovery D3",
+      TRUE                      ~ "Control"
+    )
+  )
+
+tmp <-  melt(aggregate(TM_bac$reads, by = list(TM_bac$samples$Period), sum))
+colnames(tmp) <- c("Period", "Phylum", "Value")
+
+phylum_abundance <- aggregate(Value ~ Phylum, data = tmp, sum)
+options(scipen = 999)
+total_sum <- sum(phylum_abundance$Value)
+phylum_proportions <- phylum_abundance %>% mutate(Proportion = Value / total_sum *100)
+phylum_proportions
+top_phyla <- head(phylum_abundance$Phylum[order(phylum_abundance$Value, decreasing = TRUE)],6)
+tmp <- tmp %>%
+  mutate(Phylum2 = ifelse(Phylum %in% top_phyla, paste0(Phylum), "Others"))
+sample_abundance <- tmp %>%
+  group_by(Period) %>%
+  summarize(TotalValue = sum(Value))
+tmp <- merge(tmp, sample_abundance, by = "Period")
+tmp$RelativeAbundance <- tmp$Value / tmp$TotalValue
+tmp <- tmp %>%
+  group_by(Period) %>%
+  arrange(RelativeAbundance)
+tmp$Phylum2[which(tmp$Phylum2== "NA")] <- "unidentified"
+custom_colors13 <- c("#774C22", "#965326", 
+                     "#FFE898", 
+                     "#C1A13E", 
+                     "#5D641E",
+                     "#BAD0C4", #muco
+                     "#7CAED1", "#98D3F1", 
+                       "#TMTMBB", "#FFD34C")
+
+tmp_TM <- tmp
+
+#vir sur------
+
+VS_bac <- subset_metabarlist(leaf_phy, table = "samples", indices = leaf_phy$samples$Name == "V. surinamensis")
+VS_bac <- subset_metabarlist(VS_bac, table = "samples", indices = VS_bac$samples$Time %in% c("t21", "t27", "t71", "t51", "t57", "t101"))
+VS_bac$samples <- VS_bac$samples %>%
+   mutate(Transition = ifelse(Treatment == "C0", "C0", "Other"))
+VS_bac$samples <- VS_bac$samples %>%
+   mutate(Period = case_when(
+      Transition == "Other" &  Time == "t21" ~ "D1",
+      Transition == "Other" &  Time == "t27" ~ "D2",
+      Transition == "Other" &  Time == "t71" ~ "D3",
+      Transition == "Other" &  Time == "t51" ~ "Recovery D1",
+      Transition == "Other" &  Time == "t57" ~ "Recovery D2",
+      Transition == "Other" &  Time == "t101" ~ "Recovery D3",
+      TRUE                      ~ "Control"
+    )
+  )
+
+tmp <-  melt(aggregate(VS_bac$reads, by = list(VS_bac$samples$Period), sum))
+colnames(tmp) <- c("Period", "Phylum", "Value")
+
+phylum_abundance <- aggregate(Value ~ Phylum, data = tmp, sum)
+options(scipen = 999)
+total_sum <- sum(phylum_abundance$Value)
+phylum_proportions <- phylum_abundance %>% mutate(Proportion = Value / total_sum *100)
+phylum_proportions
+top_phyla <- head(phylum_abundance$Phylum[order(phylum_abundance$Value, decreasing = TRUE)],6)
+tmp <- tmp %>%
+  mutate(Phylum2 = ifelse(Phylum %in% top_phyla, paste0(Phylum), "Others"))
+sample_abundance <- tmp %>%
+  group_by(Period) %>%
+  summarize(TotalValue = sum(Value))
+tmp <- merge(tmp, sample_abundance, by = "Period")
+tmp$RelativeAbundance <- tmp$Value / tmp$TotalValue
+tmp <- tmp %>%
+  group_by(Period) %>%
+  arrange(RelativeAbundance)
+tmp$Phylum2[which(tmp$Phylum2== "NA")] <- "unidentified"
+custom_colors13 <- c("#774C22", "#965326", 
+                     "#FFE898", 
+                     "#C1A13E", 
+                     "#5D641E",
+                     "#BAD0C4", #muco
+                     "#7CAED1", "#98D3F1", 
+                       "#VSVSBB", "#FFD34C")
+
+tmp_VS <- tmp
+
+```
+
+#combine phylum
+```{r}
+tmp_EF$Host <- "E. falcata"
+tmp_IH$Host <- "I. hostmannii"
+tmp_JC$Host <- "J. copaia"
+tmp_PO$Host <- "P. officinalis"
+tmp_SG$Host <- "S. globulifera"
+tmp_TM$Host <- "T. melinonii"
+tmp_VS$Host <- "V. surinamensis"
+phylum <- rbind(tmp_EF, tmp_IH, tmp_JC, tmp_PO, tmp_SG, tmp_TM, tmp_VS)
+phylum$Period <- dplyr::recode(phylum$Period, "Control" = "C0")
+
+custom_colors23<- c("#774C22", "#965326", 
+                     "#FFE898", 
+                     "#C1A13E", 
+                     "#5D641E",
+                     "#BAD0C4",
+                     "#7CAED1", "#98D3F1", 
+                       "#EFEFBB", "#FFD34C",
+                     "#dad7cd", "#386641", "#A7C957", "#a3b18a", "#B5E48C", "#432818","#F67E13", "#BC3853", "#F3E762", "#64146E", "#A36A69", "#fc03ec", "#a81513") 
+
+#plot
+
+plot_phylum_bac <- phylum %>%
+  ggplot(aes(x = Period, y = RelativeAbundance, fill = Phylum2)) +
+  geom_bar(position = "stack", stat = "identity") +
+  labs(x = NULL, y = "", fill = "Phylum") +
+  scale_fill_manual(values = custom_colors23) +
+ theme_bw(base_size=12) +
+  theme(
+    legend.position = "bottom",
+    legend.title = element_text(hjust = 0.5),
+     legend.direction = "vertical",  # Make the legend vertical
+    legend.box = "vertical",  # Make the legend box vertical
+    axis.text.y = element_text(face = "italic"),
+    legend.key = element_rect(fill = "white"),
+    strip.text = element_text(face = "italic", size = 13),
+    strip.background = element_rect(fill = "white", color = "black", size = 0.5), 
+   panel.border = element_blank() ) +
+  theme(strip.background = element_blank(), axis.text.x = element_text(angle= 60))+
+  guides(fill=guide_legend(ncol=4))+
+  facet_wrap(~Host, ncol = 7)
+
+plot_phylum_bac
+
+ggsave(filename = "./results/microbio/bac_taxo_drought_and_recovery.jpeg", plot = 
+plot_phylum_bac, width = 10, height = 6)
+```
+
+
+#2- Fungi
+
+
+## phylum
+
+```{r}
+load("/DRYER_greenhouse/results/Metabarlist_serre_ITS_AMVG42-230505_clean.Rdata")
+rownames(AMVG42_230505_ITS_clean$samples) <- AMVG42_230505_ITS_clean$samples$sample_id
+leaf <- AMVG42_230505_ITS_clean
+
+# Aggregate the metabarlist at the class level
+leaf_phy <-  aggregate_motus(leaf, groups= leaf$motus$Phylum)
+
+leaf_phy$samples$Name <- NA
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Epe.fal"] <- "E. falcata"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Iry.hos"] <- "I. hostmannii"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Jac.cop"] <- "J. copaia"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Pte.off"] <- "P. officinalis"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Sym.off"] <- "S. globulifera"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Tac.mel"] <- "T. melinonii"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Vir.sur"] <- "V. surinamensis"
+
+EF_bac <- subset_metabarlist(leaf_phy, table = "samples", indices = leaf_phy$samples$Name == "E. falcata")
+EF_bac <- subset_metabarlist(EF_bac, table = "samples", indices = EF_bac$samples$Time %in% c("t21", "t27", "t71"))
+
+# Aggregate per organ/genus
+tmp <-  melt(aggregate(EF_bac$reads, by = list(EF_bac$samples$Treatment), sum))
+
+colnames(tmp) <- c("Treatment", "Phylum", "Value")
+
+
+# Calculate the total abundance per phylum
+phylum_abundance <- aggregate(Value ~ Phylum, data = tmp, sum)
+options(scipen = 999)
+total_sum <- sum(phylum_abundance$Value)
+phylum_proportions <- phylum_abundance %>% mutate(Proportion = Value / total_sum *100)
+phylum_proportions
+
+# Sort the data by the total abundance in descending order
+top_phyla <- head(phylum_abundance$Phylum[order(phylum_abundance$Value, decreasing = TRUE)],6)
+
+# Classify other phyla as 'Others'
+tmp <- tmp %>%
+  mutate(Phylum2 = ifelse(Phylum %in% top_phyla, paste0(Phylum), "Others"))
+
+# total abundance per species
+sample_abundance <- tmp %>%
+  group_by(Treatment) %>%
+  summarize(TotalValue = sum(Value))
+
+# Merge the total sample abundance with the data
+tmp <- merge(tmp, sample_abundance, by = "Treatment")
+
+# Calculate the relative abundances
+tmp$RelativeAbundance <- tmp$Value / tmp$TotalValue
+
+# Sort the data within each sample by increasing relative abundance
+tmp <- tmp %>%
+  group_by(Treatment) %>%
+  arrange(RelativeAbundance)
+
+tmp$Phylum2[which(tmp$Phylum2== "NA")] <- "unidentified"
+
+# Define the manual colors for six levels 
+custom_colors13_ef <- c("#774C22",#asco, 
+                        "#965326", 
+                     "#FFE898",
+                     "#7CAED1",
+                     "#C1A13E", 
+                     #"#5D641E",
+                     "#BAD0C4", #muco
+                     "#7CAED1", "#98D3F1", 
+                       "#EFEFBB", "#FFD34C")
+#custom_colors6 <- c("#dad7cd", "#386641", "#A7C957", "#a3b18a", "#B5E48C", "#432818")
+tmp_EF <- tmp
+#plot phyla
+EF_drought_taxo <- tmp %>%
+    #mutate(Name = gsub("_", " ", Name)) %>% 
+    ggplot(aes(x=Treatment, y=RelativeAbundance, fill=Phylum2)) +
+    geom_bar(position="stack", stat="identity") +
+    labs(x=NULL, y="", fill="Phylum") +
+    scale_fill_manual(values= custom_colors13_ef) +
+    #scale_x_discrete(limits = rev(levels(as.factor(tmp$Treatment))))+
+    theme_bw() +
+    theme(legend.position = "none",axis.text.y = element_text(face = "italic")) +
+    ggtitle("E. falcata")+
+    theme(title = element_text(face= "italic"))
+    
+EF_drought_taxo 
+
+#I. hos
+
+IH_bac <- subset_metabarlist(leaf_phy, table = "samples", indices = leaf_phy$samples$Name == "I. hostmannii")
+IH_bac <- subset_metabarlist(IH_bac, table = "samples", indices = IH_bac$samples$Time %in% c("t21", "t27", "t71"))
+
+# Aggregate per organ/genus
+tmp <-  melt(aggregate(IH_bac$reads, by = list(IH_bac$samples$Treatment), sum))
+
+colnames(tmp) <- c("Treatment", "Phylum", "Value")
+
+
+# Calculate the total abundance per phylum
+phylum_abundance <- aggregate(Value ~ Phylum, data = tmp, sum)
+options(scipen = 999)
+total_sum <- sum(phylum_abundance$Value)
+phylum_proportions <- phylum_abundance %>% mutate(Proportion = Value / total_sum *100)
+phylum_proportions
+
+# Sort the data by the total abundance in descending order
+top_phyla <- head(phylum_abundance$Phylum[order(phylum_abundance$Value, decreasing = TRUE)],6)
+
+# Classify other phyla as 'Others'
+tmp <- tmp %>%
+  mutate(Phylum2 = ifelse(Phylum %in% top_phyla, paste0(Phylum), "Others"))
+
+# total abundance per species
+sample_abundance <- tmp %>%
+  group_by(Treatment) %>%
+  summarize(TotalValue = sum(Value))
+
+# Merge the total sample abundance with the data
+tmp <- merge(tmp, sample_abundance, by = "Treatment")
+
+# Calculate the relative abundances
+tmp$RelativeAbundance <- tmp$Value / tmp$TotalValue
+
+# Sort the data within each sample by increasing relative abundance
+tmp <- tmp %>%
+  group_by(Treatment) %>%
+  arrange(RelativeAbundance)
+
+tmp$Phylum2[which(tmp$Phylum2== "NA")] <- "unidentified"
+
+# Define the manual colors for six levels
+custom_colors13_ih <- c("#FFD34C", #others
+                        "#774C22",#asco
+                        "#965326", #basidio
+                     "#FFE898", 
+                     "#C1A13E", 
+                     #"#5D641E",
+                     "#BAD0C4", #muco
+                     "#7CAED1", "#98D3F1", 
+                       "#EFEFBB")
+#custom_colors6 <- c("#dad7cd", "#386641", "#A7C957", "#a3b18a", "#B5E48C", "#432818")
+tmp_IH <- tmp
+#plot phyla
+IH_drought_taxo <- tmp %>%
+    #mutate(Name = gsub("_", " ", Name)) %>% 
+    ggplot(aes(x=Treatment, y=RelativeAbundance, fill=Phylum2)) +
+    geom_bar(position="stack", stat="identity") +
+    labs(x=NULL, y="", fill="Phylum") +
+    scale_fill_manual(values= custom_colors13_ih) +
+    #scale_x_discrete(limits = rev(levels(as.factor(tmp$Treatment))))+
+    theme_bw() +
+    theme(legend.position = "none",axis.text.y = element_text(face = "italic")) +
+    ggtitle("I. hostmannii")+
+    theme(title = element_text(face= "italic"))
+    
+IH_drought_taxo 
+
+#jaccop
+
+JC_bac <- subset_metabarlist(leaf_phy, table = "samples", indices = leaf_phy$samples$Name == "J. copaia")
+JC_bac <- subset_metabarlist(JC_bac, table = "samples", indices = JC_bac$samples$Time %in% c("t21", "t27", "t71"))
+
+# Aggregate per organ/genus
+tmp <-  melt(aggregate(JC_bac$reads, by = list(JC_bac$samples$Treatment), sum))
+
+colnames(tmp) <- c("Treatment", "Phylum", "Value")
+
+
+# Calculate the total abundance per phylum
+phylum_abundance <- aggregate(Value ~ Phylum, data = tmp, sum)
+options(scipen = 999)
+total_sum <- sum(phylum_abundance$Value)
+phylum_proportions <- phylum_abundance %>% mutate(Proportion = Value / total_sum *100)
+phylum_proportions
+
+# Sort the data by the total abundance in descending order
+top_phyla <- head(phylum_abundance$Phylum[order(phylum_abundance$Value, decreasing = TRUE)],6)
+
+# Classify other phyla as 'Others'
+tmp <- tmp %>%
+  mutate(Phylum2 = ifelse(Phylum %in% top_phyla, paste0(Phylum), "Others"))
+
+# total abundance per species
+sample_abundance <- tmp %>%
+  group_by(Treatment) %>%
+  summarize(TotalValue = sum(Value))
+
+# Merge the total sample abundance with the data
+tmp <- merge(tmp, sample_abundance, by = "Treatment")
+
+# Calculate the relative abundances
+tmp$RelativeAbundance <- tmp$Value / tmp$TotalValue
+
+# Sort the data within each sample by increasing relative abundance
+tmp <- tmp %>%
+  group_by(Treatment) %>%
+  arrange(RelativeAbundance)
+
+tmp$Phylum2[which(tmp$Phylum2== "NA")] <- "unidentified"
+
+# Define the manual colors for six levels
+custom_colors13_jc <- c("#FFD34C", #others
+                        "#774C22", "#965326", 
+                     "#FFE898", 
+                     "#5D641E", #glomero
+                     "#BAD0C4", #muco
+                     "#7CAED1", "#98D3F1", 
+                       "#EFEFBB", "#FFD34C")
+#custom_colors6 <- c("#dad7cd", "#386641", "#A7C957", "#a3b18a", "#B5E48C", "#432818")
+tmp_JC <- tmp
+#plot phyla
+JC_drought_taxo <- tmp %>%
+    #mutate(Name = gsub("_", " ", Name)) %>% 
+    ggplot(aes(x=Treatment, y=RelativeAbundance, fill=Phylum2)) +
+    geom_bar(position="stack", stat="identity") +
+    labs(x=NULL, y="", fill="Phylum") +
+    scale_fill_manual(values= custom_colors13_jc) +
+    #scale_x_discrete(limits = rev(levels(as.factor(tmp$Treatment))))+
+    theme_bw() +
+    theme(legend.position = "none",axis.text.y = element_text(face = "italic")) +
+    ggtitle("J. copaia")+
+    theme(title = element_text(face= "italic"))
+    
+JC_drought_taxo
+
+#Pteoff
+PO_bac <- subset_metabarlist(leaf_phy, table = "samples", indices = leaf_phy$samples$Name == "P. officinalis")
+PO_bac <- subset_metabarlist(PO_bac, table = "samples", indices = PO_bac$samples$Time %in% c("t21", "t27", "t71"))
+
+# Aggregate per organ/genus
+tmp <-  melt(aggregate(PO_bac$reads, by = list(PO_bac$samples$Treatment), sum))
+
+colnames(tmp) <- c("Treatment", "Phylum", "Value")
+
+
+# Calculate the total abundance per phylum
+phylum_abundance <- aggregate(Value ~ Phylum, data = tmp, sum)
+options(scipen = 999)
+total_sum <- sum(phylum_abundance$Value)
+phylum_proportions <- phylum_abundance %>% mutate(Proportion = Value / total_sum *100)
+phylum_proportions
+
+# Sort the data by the total abundance in descending order
+top_phyla <- head(phylum_abundance$Phylum[order(phylum_abundance$Value, decreasing = TRUE)],6)
+
+# Classify other phyla as 'Others'
+tmp <- tmp %>%
+  mutate(Phylum2 = ifelse(Phylum %in% top_phyla, paste0(Phylum), "Others"))
+
+# total abundance per species
+sample_abundance <- tmp %>%
+  group_by(Treatment) %>%
+  summarize(TotalValue = sum(Value))
+
+# Merge the total sample abundance with the data
+tmp <- merge(tmp, sample_abundance, by = "Treatment")
+
+# Calculate the relative abundances
+tmp$RelativeAbundance <- tmp$Value / tmp$TotalValue
+
+# Sort the data within each sample by increasing relative abundance
+tmp <- tmp %>%
+  group_by(Treatment) %>%
+  arrange(RelativeAbundance)
+
+tmp$Phylum2[which(tmp$Phylum2== "NA")] <- "unidentified"
+
+# Define the manual colors for six levels
+custom_colors13_po <- c("#FFD34C", #others
+                     "#774C22", "#965326", 
+                     "#FFE898", 
+                     "#C1A13E",
+                       "#5D641E", #glomero
+                     "#7CAED1",
+                     "#BAD0C4", #muco
+                     "#7CAED1", "#98D3F1", 
+                       "#EFEFBB", "#FFD34C")
+#custom_colors6 <- c("#dad7cd", "#386641", "#A7C957", "#a3b18a", "#B5E48C", "#432818")
+tmp_PO <- tmp
+#plot phyla
+PO_drought_taxo <- tmp %>%
+    #mutate(Name = gsub("_", " ", Name)) %>% 
+    ggplot(aes(x=Treatment, y=RelativeAbundance, fill=Phylum2)) +
+    geom_bar(position="stack", stat="identity") +
+    labs(x=NULL, y="", fill="Phylum") +
+    scale_fill_manual(values= custom_colors13_po) +
+    #scale_x_discrete(limits = rev(levels(as.factor(tmp$Treatment))))+
+    theme_bw() +
+    theme(legend.position = "none",axis.text.y = element_text(face = "italic")) +
+    ggtitle("P. officinalis")+
+    theme(title = element_text(face= "italic"))
+    
+PO_drought_taxo 
+
+#Sym.glo
+
+SG_bac <- subset_metabarlist(leaf_phy, table = "samples", indices = leaf_phy$samples$Name == "S. globulifera")
+SG_bac <- subset_metabarlist(SG_bac, table = "samples", indices = SG_bac$samples$Time %in% c("t21", "t27", "t71"))
+
+# Aggregate per organ/genus
+tmp <-  melt(aggregate(SG_bac$reads, by = list(SG_bac$samples$Treatment), sum))
+
+colnames(tmp) <- c("Treatment", "Phylum", "Value")
+
+
+# Calculate the total abundance per phylum
+phylum_abundance <- aggregate(Value ~ Phylum, data = tmp, sum)
+options(scipen = 999)
+total_sum <- sum(phylum_abundance$Value)
+phylum_proportions <- phylum_abundance %>% mutate(Proportion = Value / total_sum *100)
+phylum_proportions
+
+# Sort the data by the total abundance in descending order
+top_phyla <- head(phylum_abundance$Phylum[order(phylum_abundance$Value, decreasing = TRUE)],6)
+
+# Classify other phyla as 'Others'
+tmp <- tmp %>%
+  mutate(Phylum2 = ifelse(Phylum %in% top_phyla, paste0(Phylum), "Others"))
+
+# total abundance per species
+sample_abundance <- tmp %>%
+  group_by(Treatment) %>%
+  summarize(TotalValue = sum(Value))
+
+# Merge the total sample abundance with the data
+tmp <- merge(tmp, sample_abundance, by = "Treatment")
+
+# Calculate the relative abundances
+tmp$RelativeAbundance <- tmp$Value / tmp$TotalValue
+
+# Sort the data within each sample by increasing relative abundance
+tmp <- tmp %>%
+  group_by(Treatment) %>%
+  arrange(RelativeAbundance)
+
+tmp$Phylum2[which(tmp$Phylum2== "NA")] <- "unidentified"
+
+# Define the manual colors for six levels
+custom_colors13_tm <- c("#FFD34C", #others
+                        "#774C22", "#965326", 
+                     "#FFE898", 
+                     "#C1A13E", 
+                     #"#5D641E",
+                     "#98D3F1", #kick
+                     "#7CAED1", "#98D3F1", 
+                       "#EFEFBB", "#FFD34C")
+#custom_colors6 <- c("#dad7cd", "#386641", "#A7C957", "#a3b18a", "#B5E48C", "#432818")
+tmp_SG <- tmp
+#plot phyla
+SG_drought_taxo <- tmp %>%
+    #mutate(Name = gsub("_", " ", Name)) %>% 
+    ggplot(aes(x=Treatment, y=RelativeAbundance, fill=Phylum2)) +
+    geom_bar(position="stack", stat="identity") +
+    labs(x=NULL, y="", fill="Phylum") +
+    scale_fill_manual(values= custom_colors13_tm) +
+    #scale_x_discrete(limits = rev(levels(as.factor(tmp$Treatment))))+
+    theme_bw() +
+    theme(legend.position = "none",axis.text.y = element_text(face = "italic")) +
+    ggtitle("S. globulifera")+
+    theme(title = element_text(face= "italic"))
+    
+SG_drought_taxo 
+
+#T.mel
+TM_bac <- subset_metabarlist(leaf_phy, table = "samples", indices = leaf_phy$samples$Name == "T. melinonii")
+TM_bac <- subset_metabarlist(TM_bac, table = "samples", indices = TM_bac$samples$Time %in% c("t21", "t27", "t71"))
+
+# Aggregate per organ/genus
+tmp <-  melt(aggregate(TM_bac$reads, by = list(TM_bac$samples$Treatment), sum))
+
+colnames(tmp) <- c("Treatment", "Phylum", "Value")
+
+
+# Calculate the total abundance per phylum
+phylum_abundance <- aggregate(Value ~ Phylum, data = tmp, sum)
+options(scipen = 999)
+total_sum <- sum(phylum_abundance$Value)
+phylum_proportions <- phylum_abundance %>% mutate(Proportion = Value / total_sum *100)
+phylum_proportions
+
+# Sort the data by the total abundance in descending order
+top_phyla <- head(phylum_abundance$Phylum[order(phylum_abundance$Value, decreasing = TRUE)],6)
+
+# Classify other phyla as 'Others'
+tmp <- tmp %>%
+  mutate(Phylum2 = ifelse(Phylum %in% top_phyla, paste0(Phylum), "Others"))
+
+# total abundance per species
+sample_abundance <- tmp %>%
+  group_by(Treatment) %>%
+  summarize(TotalValue = sum(Value))
+
+# Merge the total sample abundance with the data
+tmp <- merge(tmp, sample_abundance, by = "Treatment")
+
+# Calculate the relative abundances
+tmp$RelativeAbundance <- tmp$Value / tmp$TotalValue
+
+# Sort the data within each sample by increasing relative abundance
+tmp <- tmp %>%
+  group_by(Treatment) %>%
+  arrange(RelativeAbundance)
+
+tmp$Phylum2[which(tmp$Phylum2== "NA")] <- "unidentified"
+
+# Define the manual colors for six levels
+custom_colors13_tm <- c("#FFD34C", #others
+                        "#774C22", "#965326", 
+                     "#FFE898", 
+                     "#C1A13E", #deinococcota
+                     #"#5D641E",
+                     "#388262", #mono
+                     "#7CAED1", "#98D3F1", 
+                       "#EFEFBB", "#FFD34C")
+#custom_colors6 <- c("#dad7cd", "#386641", "#A7C957", "#a3b18a", "#B5E48C", "#432818")
+tmp_TM <- tmp
+#plot phyla
+TM_drought_taxo <- tmp %>%
+    #mutate(Name = gsub("_", " ", Name)) %>% 
+    ggplot(aes(x=Treatment, y=RelativeAbundance, fill=Phylum2)) +
+    geom_bar(position="stack", stat="identity") +
+    labs(x=NULL, y="", fill="Phylum") +
+    scale_fill_manual(values= custom_colors13_tm) +
+    #scale_x_discrete(limits = rev(levels(as.factor(tmp$Treatment))))+
+    theme_bw() +
+    theme(legend.position = "none",axis.text.y = element_text(face = "italic")) +
+    ggtitle("T. melinonii")+
+    theme(title = element_text(face= "italic"))
+    
+TM_drought_taxo 
+
+#vir sur
+VS_bac <- subset_metabarlist(leaf_phy, table = "samples", indices = leaf_phy$samples$Name == "V. surinamensis")
+VS_bac <- subset_metabarlist(VS_bac, table = "samples", indices = VS_bac$samples$Time %in% c("t21", "t27", "t71"))
+
+# Aggregate per organ/genus
+tmp <-  melt(aggregate(VS_bac$reads, by = list(VS_bac$samples$Treatment), sum))
+
+colnames(tmp) <- c("Treatment", "Phylum", "Value")
+
+
+# Calculate the total abundance per phylum
+phylum_abundance <- aggregate(Value ~ Phylum, data = tmp, sum)
+options(scipen = 999)
+total_sum <- sum(phylum_abundance$Value)
+phylum_proportions <- phylum_abundance %>% mutate(Proportion = Value / total_sum *100)
+phylum_proportions
+
+# Sort the data by the total abundance in descending order
+top_phyla <- head(phylum_abundance$Phylum[order(phylum_abundance$Value, decreasing = TRUE)],6)
+
+# Classify other phyla as 'Others'
+tmp <- tmp %>%
+  mutate(Phylum2 = ifelse(Phylum %in% top_phyla, paste0(Phylum), "Others"))
+
+# total abundance per species
+sample_abundance <- tmp %>%
+  group_by(Treatment) %>%
+  summarize(TotalValue = sum(Value))
+
+# Merge the total sample abundance with the data
+tmp <- merge(tmp, sample_abundance, by = "Treatment")
+
+# Calculate the relative abundances
+tmp$RelativeAbundance <- tmp$Value / tmp$TotalValue
+
+# Sort the data within each sample by increasing relative abundance
+tmp <- tmp %>%
+  group_by(Treatment) %>%
+  arrange(RelativeAbundance)
+
+tmp$Phylum2[which(tmp$Phylum2== "NA")] <- "unidentified"
+
+# Define the manual colors for six levels
+custom_colors13_vs <- c("#774C22", "#965326", 
+                     "#FFE898", 
+                     "#C1A13E", 
+                     #"#5D641E",
+                     "#388262", #mono
+                     "#7CAED1", "#98D3F1", 
+                       "#EFEFBB", "#FFD34C")
+#custom_colors6 <- c("#dad7cd", "#386641", "#A7C957", "#a3b18a", "#B5E48C", "#432818")
+tmp_VS <- tmp
+#plot phyla
+VS_drought_taxo <- tmp %>%
+    #mutate(Name = gsub("_", " ", Name)) %>% 
+    ggplot(aes(x=Treatment, y=RelativeAbundance, fill=Phylum2)) +
+    geom_bar(position="stack", stat="identity") +
+    labs(x=NULL, y="", fill="Phylum") +
+    scale_fill_manual(values= custom_colors13_vs) +
+    #scale_x_discrete(limits = rev(levels(as.factor(tmp$Treatment))))+
+    theme_bw() +
+    theme(legend.position = "none",axis.text.y = element_text(face = "italic")) +
+    ggtitle("V. surinamensis")+
+    theme(title = element_text(face= "italic"))
+    
+VS_drought_taxo 
+```
+
+
+# combine all phylum
+```{r}
+
+#common legend
+Phylum <- c("Ascomycota", "Basidiomycota", "Chytridiomycota","Fungi_phy_Incertae_sedis", "Glomeromycota", "Kickxellomycota", "Monoblepharomycota", "Mucoromycota", "Others", "Unidentified")
+
+value <- c(1,1,1,1,1,1,1,1,1,1)
+value2 <- c(1,2,3,4,5,6,7,8,9,10)
+
+legend_data <- data.frame(Phylum, value, value2) 
+
+custom_colors13_legend <- c("#774C22", "#965326", 
+                     "#FFE898", 
+                     "#C1A13E", 
+                     "#5D641E",
+                      "#98D3F1", #kick
+                     "#388262", #mono
+                     "#BAD0C4", #muco
+                     "#FFD34C", #others
+                     "#7CAED1", "#98D3F1", 
+                       "#EFEFBB")
+
+legend_plot <- legend_data %>%
+    ggplot(aes(x=value,y=value2, fill=Phylum)) +
+    geom_bar(position="stack", stat="identity") +
+    labs(x=NULL, y="", fill="Phylum") +
+    scale_fill_manual(values= custom_colors13_legend) +
+    theme_bw() +
+    theme(legend.position = "bottom", legend.box = "vertical", legend.direction = "vertical")
+
+legend <- get_legend(legend_plot)
+
+fun_taxo_drought <- ggarrange(EF_drought_taxo, IH_drought_taxo, JC_drought_taxo, PO_drought_taxo, SG_drought_taxo, TM_drought_taxo, VS_drought_taxo, as_ggplot(legend), nrow=2, ncol=4)
+
+ggsave(filename = "./results/microbio/fun_taxo_drought.jpeg", plot = fun_taxo_drought, width = 10, height = 6)
+fun_taxo_drought
+```
+
+## combine data
+```{r}
+tmp_EF$Host <- "E. falcata"
+tmp_IH$Host <- "I. hostmannii"
+tmp_JC$Host <- "J. copaia"
+tmp_PO$Host <- "P. officinalis"
+tmp_SG$Host <- "S. globulifera"
+tmp_TM$Host <- "T. melinonii"
+tmp_VS$Host <- "V. surinamensis"
+phylum_drought <- rbind(tmp_EF, tmp_IH, tmp_JC, tmp_PO, tmp_SG, tmp_TM, tmp_VS)
+
+write.csv(x = phylum_drought, file = "phylum_drought_fungi.csv")
+```
+
+
+## Order
+```{r}
+load("/DRYER_greenhouse/results/Metabarlist_serre_ITS_AMVG42-230505_clean.Rdata")
+rownames(AMVG42_230505_ITS_clean$samples) <- AMVG42_230505_ITS_clean$samples$sample_id
+leaf <- AMVG42_230505_ITS_clean
+
+
+leaf$motus$Phylum_Class_Order <- paste0(leaf$motus$Phylum, ";", " ", leaf$motus$Class, ";", " ",leaf$motus$Order)
+
+leaf$motus$Order <- paste0("o__",leaf$motus$Order)
+
+# Aggregate the metabarlist at the class level
+#leaf_order <-  aggregate_motus(leaf, groups= leaf$motus$Phylum_Class_Order)
+leaf_order <-  aggregate_motus(leaf, groups= leaf$motus$Order)
+
+leaf_order$samples$Name <- NA
+leaf_order$samples$Name[leaf_order$samples$Species == "Epe.fal"] <- "E. falcata"
+leaf_order$samples$Name[leaf_order$samples$Species == "Iry.hos"] <- "I. hostmannii"
+leaf_order$samples$Name[leaf_order$samples$Species == "Jac.cop"] <- "J. copaia"
+leaf_order$samples$Name[leaf_order$samples$Species == "Pte.off"] <- "P. officinalis"
+leaf_order$samples$Name[leaf_order$samples$Species == "Sym.off"] <- "S. globulifera"
+leaf_order$samples$Name[leaf_order$samples$Species == "Tac.mel"] <- "T. melinonii"
+leaf_order$samples$Name[leaf_order$samples$Species == "Vir.sur"] <- "V. surinamensis"
+
+leaf_order$samples <- leaf_order$samples %>%
+   mutate(Period = case_when(
+      Treatment == "D1" &  Time == "t21" ~ "D1",
+      Treatment == "D2" &  Time == "t27" ~ "D2",
+      Treatment == "D3" &  Time == "t71" ~ "D3",
+      Treatment == "D1" &  Time == "t51" ~ "R1",
+      Treatment == "D2" &  Time == "t57" ~ "R2",
+      Treatment == "D3" &  Time == "t101" ~ "R3",
+      TRUE                      ~ "C0"
+    )
+  )
+
+
+#ef-------
+EF_fun <- subset_metabarlist(leaf_order, table = "samples", indices = leaf_order$samples$Name == "E. falcata")
+
+# Aggregate per organ/genus
+tmp <-  melt(aggregate(EF_fun$reads, by = list(EF_fun$samples$Period), sum))
+
+colnames(tmp) <- c("Period", "Order", "Value")
+
+
+# Calculate the total abundance per phylum
+Order_abundance <- aggregate(Value ~ Order, data = tmp, sum)
+options(scipen = 999)
+total_sum <- sum(Order_abundance$Value)
+Order_proportions <- Order_abundance %>% mutate(Proportion = Value / total_sum *100)
+Order_proportions
+
+# Sort the data by the total abundance in descending order
+top_order <- head(Order_abundance$Order[order(Order_abundance$Value, decreasing = TRUE)],15)
+
+# Classify other phyla as 'Others'
+tmp <- tmp %>%
+  mutate(Order2 = ifelse(Order %in% top_order, paste0(Order), "Others"))
+
+# total abundance per species
+sample_abundance <- tmp %>%
+  group_by(Period) %>%
+  summarize(TotalValue = sum(Value))
+
+# Merge the total sample abundance with the data
+tmp <- merge(tmp, sample_abundance, by = "Period")
+
+# Calculate the relative abundances
+tmp$RelativeAbundance <- tmp$Value / tmp$TotalValue
+
+# Sort the data within each sample by increasing relative abundance
+tmp <- tmp %>%
+  group_by(Period) %>%
+  arrange(RelativeAbundance)
+
+tmp$Order2[which(tmp$Order2== "NA")] <- "unidentified"
+
+# Define the manual colors for six levels
+custom_colors23<- c("#774C22", "#965326", 
+                     "#FFE898", 
+                     "#C1A13E", 
+                     "#5D641E",
+                     "#BAD0C4",
+                     "#7CAED1", "#98D3F1", 
+                       "#EFEFBB", "#FFD34C",
+                     "#dad7cd", "#386641", "#A7C957", "#a3b18a", "#B5E48C", "#432818","#F67E13", "#BC3853", "#F3E762", "#64146E", "#A36A69", "#fc03ec", "#a81513") 
+tmp_EF <- tmp
+
+#I. hos-------------
+IH_fun <- subset_metabarlist(leaf_order, table = "samples", indices = leaf_order$samples$Name == "I. hostmannii")
+
+tmp <-  melt(aggregate(IH_fun$reads, by = list(IH_fun$samples$Period), sum))
+colnames(tmp) <- c("Period", "Order", "Value")
+Order_abundance <- aggregate(Value ~ Order, data = tmp, sum)
+options(scipen = 999)
+total_sum <- sum(Order_abundance$Value)
+Order_proportions <- Order_abundance %>% mutate(Proportion = Value / total_sum *100)
+Order_proportions
+top_Order <- head(Order_abundance$Order[order(Order_abundance$Value, decreasing = TRUE)],15)
+tmp <- tmp %>%
+  mutate(Order2 = ifelse(Order %in% top_Order, paste0(Order), "Others"))
+sample_abundance <- tmp %>%
+  group_by(Period) %>%
+  summarize(TotalValue = sum(Value))
+tmp <- merge(tmp, sample_abundance, by = "Period")
+tmp$RelativeAbundance <- tmp$Value / tmp$TotalValue
+tmp <- tmp %>%
+  group_by(Period) %>%
+  arrange(RelativeAbundance)
+tmp$Order2[which(tmp$Order2== "NA")] <- "unidentified"
+tmp_IH <- tmp
+
+#jaccop-------------
+JC_fun <- subset_metabarlist(leaf_order, table = "samples", indices = leaf_order$samples$Name == "J. copaia")
+
+tmp <-  melt(aggregate(JC_fun$reads, by = list(JC_fun$samples$Period), sum))
+colnames(tmp) <- c("Period", "Order", "Value")
+Order_abundance <- aggregate(Value ~ Order, data = tmp, sum)
+options(scipen = 999)
+total_sum <- sum(Order_abundance$Value)
+Order_proportions <- Order_abundance %>% mutate(Proportion = Value / total_sum *100)
+Order_proportions
+top_Order <- head(Order_abundance$Order[order(Order_abundance$Value, decreasing = TRUE)],15)
+tmp <- tmp %>%
+  mutate(Order2 = ifelse(Order %in% top_Order, paste0(Order), "Others"))
+sample_abundance <- tmp %>%
+  group_by(Period) %>%
+  summarize(TotalValue = sum(Value))
+tmp <- merge(tmp, sample_abundance, by = "Period")
+tmp$RelativeAbundance <- tmp$Value / tmp$TotalValue
+tmp <- tmp %>%
+  group_by(Period) %>%
+  arrange(RelativeAbundance)
+tmp$Order2[which(tmp$Order2== "NA")] <- "unidentified"
+tmp_JC <- tmp
+#Pteoff-----------
+PO_fun <- subset_metabarlist(leaf_order, table = "samples", indices = leaf_order$samples$Name == "P. officinalis")
+
+tmp <-  melt(aggregate(PO_fun$reads, by = list(PO_fun$samples$Period), sum))
+colnames(tmp) <- c("Period", "Order", "Value")
+Order_abundance <- aggregate(Value ~ Order, data = tmp, sum)
+options(scipen = 999)
+total_sum <- sum(Order_abundance$Value)
+Order_proportions <- Order_abundance %>% mutate(Proportion = Value / total_sum *100)
+Order_proportions
+top_Order <- head(Order_abundance$Order[order(Order_abundance$Value, decreasing = TRUE)],15)
+tmp <- tmp %>%
+  mutate(Order2 = ifelse(Order %in% top_Order, paste0(Order), "Others"))
+sample_abundance <- tmp %>%
+  group_by(Period) %>%
+  summarize(TotalValue = sum(Value))
+tmp <- merge(tmp, sample_abundance, by = "Period")
+tmp$RelativeAbundance <- tmp$Value / tmp$TotalValue
+tmp <- tmp %>%
+  group_by(Period) %>%
+  arrange(RelativeAbundance)
+tmp$Order2[which(tmp$Order2== "NA")] <- "unidentified"
+tmp_PO <- tmp
+#Sym.glo
+SG_fun <- subset_metabarlist(leaf_order, table = "samples", indices = leaf_order$samples$Name == "S. globulifera")
+
+tmp <-  melt(aggregate(SG_fun$reads, by = list(SG_fun$samples$Period), sum))
+colnames(tmp) <- c("Period", "Order", "Value")
+Order_abundance <- aggregate(Value ~ Order, data = tmp, sum)
+options(scipen = 999)
+total_sum <- sum(Order_abundance$Value)
+Order_proportions <- Order_abundance %>% mutate(Proportion = Value / total_sum *100)
+Order_proportions
+top_Order <- head(Order_abundance$Order[order(Order_abundance$Value, decreasing = TRUE)],15)
+tmp <- tmp %>%
+  mutate(Order2 = ifelse(Order %in% top_Order, paste0(Order), "Others"))
+sample_abundance <- tmp %>%
+  group_by(Period) %>%
+  summarize(TotalValue = sum(Value))
+tmp <- merge(tmp, sample_abundance, by = "Period")
+tmp$RelativeAbundance <- tmp$Value / tmp$TotalValue
+tmp <- tmp %>%
+  group_by(Period) %>%
+  arrange(RelativeAbundance)
+tmp$Order2[which(tmp$Order2== "NA")] <- "unidentified"
+tmp_SG <- tmp
+#T.mel----------------
+TM_fun <- subset_metabarlist(leaf_order, table = "samples", indices = leaf_order$samples$Name == "T. melinonii")
+
+tmp <-  melt(aggregate(TM_fun$reads, by = list(TM_fun$samples$Period), sum))
+colnames(tmp) <- c("Period", "Order", "Value")
+Order_abundance <- aggregate(Value ~ Order, data = tmp, sum)
+options(scipen = 999)
+total_sum <- sum(Order_abundance$Value)
+Order_proportions <- Order_abundance %>% mutate(Proportion = Value / total_sum *100)
+Order_proportions
+top_Order <- head(Order_abundance$Order[order(Order_abundance$Value, decreasing = TRUE)],15)
+tmp <- tmp %>%
+  mutate(Order2 = ifelse(Order %in% top_Order, paste0(Order), "Others"))
+sample_abundance <- tmp %>%
+  group_by(Period) %>%
+  summarize(TotalValue = sum(Value))
+tmp <- merge(tmp, sample_abundance, by = "Period")
+tmp$RelativeAbundance <- tmp$Value / tmp$TotalValue
+tmp <- tmp %>%
+  group_by(Period) %>%
+  arrange(RelativeAbundance)
+tmp$Order2[which(tmp$Order2== "NA")] <- "unidentified"
+tmp_TM <- tmp
+
+#vir sur------
+VS_fun <- subset_metabarlist(leaf_order, table = "samples", indices = leaf_order$samples$Name == "V. surinamensis")
+
+tmp <-  melt(aggregate(VS_fun$reads, by = list(VS_fun$samples$Period), sum))
+colnames(tmp) <- c("Period", "Order", "Value")
+Order_abundance <- aggregate(Value ~ Order, data = tmp, sum)
+options(scipen = 999)
+total_sum <- sum(Order_abundance$Value)
+Order_proportions <- Order_abundance %>% mutate(Proportion = Value / total_sum *100)
+Order_proportions
+top_Order <- head(Order_abundance$Order[order(Order_abundance$Value, decreasing = TRUE)],15)
+tmp <- tmp %>%
+  mutate(Order2 = ifelse(Order %in% top_Order, paste0(Order), "Others"))
+sample_abundance <- tmp %>%
+  group_by(Period) %>%
+  summarize(TotalValue = sum(Value))
+tmp <- merge(tmp, sample_abundance, by = "Period")
+tmp$RelativeAbundance <- tmp$Value / tmp$TotalValue
+tmp <- tmp %>%
+  group_by(Period) %>%
+  arrange(RelativeAbundance)
+tmp$Order2[which(tmp$Order2== "NA")] <- "unidentified"
+tmp_VS <- tmp
+```
+
+#combine order
+```{r}
+tmp_EF$Host <- "E. falcata"
+tmp_IH$Host <- "I. hostmannii"
+tmp_JC$Host <- "J. copaia"
+tmp_PO$Host <- "P. officinalis"
+tmp_SG$Host <- "S. globulifera"
+tmp_TM$Host <- "T. melinonii"
+tmp_VS$Host <- "V. surinamensis"
+order_fun <- rbind(tmp_EF, tmp_IH, tmp_JC, tmp_PO, tmp_SG, tmp_TM, tmp_VS)
+
+custom_colors26<- c("#774C22", "#965326", 
+                     "#FFE898", 
+                     "#C1A13E", 
+                     "#5D641E",
+                     "#BAD0C4",
+                     "#7CAED1", "#98D3F1", 
+                       "#EFEFBB", "#FFD34C",
+                     "#dad7cd", "#386641", "#A7C957", "#a3b18a", "#B5E48C", "#432818","#F67E13", "#BC3853", "#F3E762", "#64146E", "#A36A69", "#fc03ec", "#a81513", "#cdb4db", "#6d6875", "#ffcdb2", "#a3b18a") 
+
+#plot order
+
+plot_order_fun <- order_fun %>%
+  ggplot(aes(x = Period, y = RelativeAbundance, fill = Order2)) +
+  geom_bar(position = "stack", stat = "identity") +
+  labs(x = NULL, y = "", fill = "Order") +
+  scale_fill_manual(values = custom_colors26) +
+  theme_bw() +
+  theme(
+    legend.position = "bottom",
+    legend.title = element_text(hjust = 0.5),
+     legend.direction = "vertical",  # Make the legend vertical
+    legend.box = "vertical",  # Make the legend box vertical
+    axis.text.y = element_text(face = "italic"),
+    legend.key = element_rect(fill = "white"),
+    strip.text = element_text(face = "italic", size = 13),
+    strip.background = element_rect(fill = "white", color = "black", size = 0.5),  # Adding a white funkground to facet labels
+   panel.border = element_blank() ) +
+  theme(strip.background = element_blank())+
+  guides(fill=guide_legend(ncol=4))+
+  facet_wrap(~Host, ncol = 7)  # Setting 4 columns for facets
+
+   
+plot_order_fun
+
+ggsave(filename = "./results/microbio/fun_taxo_drought_order.jpeg", plot = plot_order, width = 10, height = 6)
+```
+
+
+##combine plots order bacteria and fungi
+```{r}
+order_drought <- ggarrange("",plot_order_bac,"", plot_order_fun, labels = c("A. Bacteria","","", "B. Fungi"), nrow=4, ncol=1, heights = c(0.05,1,0.05,1), label.y = c(1,0,0,1.05))
+
+ggsave(filename = "./results/microbio/drought_order.jpeg", plot = order_drought, width = 10, height = 11)
+```
+#RECOVERY
+
+##phylum
+```{r}
+load("/DRYER_greenhouse/results/Metabarlist_serre_ITS_AMVG42-230505_clean.Rdata")
+rownames(AMVG42_230505_ITS_clean$samples) <- AMVG42_230505_ITS_clean$samples$sample_id
+leaf <- AMVG42_230505_ITS_clean
+
+# Aggregate the metabarlist at the class level
+leaf_phy <-  aggregate_motus(leaf, groups= leaf$motus$Phylum)
+
+leaf_phy$samples$Name <- NA
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Epe.fal"] <- "E. falcata"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Iry.hos"] <- "I. hostmannii"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Jac.cop"] <- "J. copaia"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Pte.off"] <- "P. officinalis"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Sym.off"] <- "S. globulifera"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Tac.mel"] <- "T. melinonii"
+leaf_phy$samples$Name[leaf_phy$samples$Species == "Vir.sur"] <- "V. surinamensis"
+
+leaf_phy$samples <- leaf_phy$samples %>%
+   mutate(Period = case_when(
+      Treatment == "D1" &  Time == "t21" ~ "D1",
+      Treatment == "D2" &  Time == "t27" ~ "D2",
+      Treatment == "D3" &  Time == "t71" ~ "D3",
+      Treatment == "D1" &  Time == "t51" ~ "R1",
+      Treatment == "D2" &  Time == "t57" ~ "R2",
+      Treatment == "D3" &  Time == "t101" ~ "R3",
+      TRUE                      ~ "C0"
+    )
+  )
+
+EF_fun <- subset_metabarlist(leaf_phy, table = "samples", indices = leaf_phy$samples$Name == "E. falcata")
+#EF_fun <- subset_metabarlist(EF_fun, table = "samples", indices = EF_fun$samples$Time %in% c("t21", "t27", "t71", "t51", "t57", "t101"))
+
+
+# Aggregate per organ/genus
+tmp <-  melt(aggregate(EF_fun$reads, by = list(EF_fun$samples$Period), sum))
+
+colnames(tmp) <- c("Period", "Phylum", "Value")
+
+
+# Calculate the total abundance per phylum
+phylum_abundance <- aggregate(Value ~ Phylum, data = tmp, sum)
+options(scipen = 999)
+total_sum <- sum(phylum_abundance$Value)
+phylum_proportions <- phylum_abundance %>% mutate(Proportion = Value / total_sum *100)
+phylum_proportions
+
+# Sort the data by the total abundance in descending order
+top_phyla <- head(phylum_abundance$Phylum[order(phylum_abundance$Value, decreasing = TRUE)],6)
+
+# Classify other phyla as 'Others'
+tmp <- tmp %>%
+  mutate(Phylum2 = ifelse(Phylum %in% top_phyla, paste0(Phylum), "Others"))
+
+# total abundance per species
+sample_abundance <- tmp %>%
+  group_by(Period) %>%
+  summarize(TotalValue = sum(Value))
+
+# Merge the total sample abundance with the data
+tmp <- merge(tmp, sample_abundance, by = "Period")
+
+# Calculate the relative abundances
+tmp$RelativeAbundance <- tmp$Value / tmp$TotalValue
+
+# Sort the data within each sample by increasing relative abundance
+tmp <- tmp %>%
+  group_by(Period) %>%
+  arrange(RelativeAbundance)
+
+tmp$Phylum2[which(tmp$Phylum2== "NA")] <- "unidentified"
+
+# Define the manual colors for six levels
+custom_colors13 <- c("#774C22", "#965326", 
+                     "#FFE898", 
+                     "#C1A13E", 
+                     #"#5D641E",
+                     "#BAD0C4", #muco
+                     "#7CAED1", "#98D3F1", 
+                       "#EFEFBB", "#FFD34C")
+#custom_colors6 <- c("#dad7cd", "#386641", "#A7C957", "#a3b18a", "#B5E48C", "#432818")
+
+tmp_EF <- tmp
+tmp_EF$Period <- factor(tmp_EF$Period, levels=c('Control', 'D1', 'D2','D3', 'R1', 'R2', 'R3'))
+
+#plot phyla
+EF_taxo <- tmp_EF %>%
+    ggplot(aes(x=Period, y=RelativeAbundance, fill=Phylum2)) +
+    geom_bar(position="stack", stat="identity") +
+    labs(x=NULL, y="", fill="Phylum") +
+    scale_fill_manual(values= custom_colors13) +
+    #scale_x_discrete(limits = rev(levels(as.factor(tmp$Treatment))))+
+    theme_bw() +
+    theme(legend.position = "none",axis.text.y = element_text(face = "italic")) +
+    ggtitle("E. falcata")+
+    theme(title = element_text(face= "italic"))
+    
+EF_taxo 
+
+#I. hos-------------
+
+IH_fun <- subset_metabarlist(leaf_phy, table = "samples", indices = leaf_phy$samples$Name == "I. hostmannii")
+#IH_fun <- subset_metabarlist(IH_fun, table = "samples", indices = IH_fun$samples$Time %in% c("t21", "t27", "t71", "t51", "t57", "t101"))
+
+tmp <-  melt(aggregate(IH_fun$reads, by = list(IH_fun$samples$Period), sum))
+colnames(tmp) <- c("Period", "Phylum", "Value")
+
+phylum_abundance <- aggregate(Value ~ Phylum, data = tmp, sum)
+options(scipen = 999)
+total_sum <- sum(phylum_abundance$Value)
+phylum_proportions <- phylum_abundance %>% mutate(Proportion = Value / total_sum *100)
+phylum_proportions
+top_phyla <- head(phylum_abundance$Phylum[order(phylum_abundance$Value, decreasing = TRUE)],6)
+tmp <- tmp %>%
+  mutate(Phylum2 = ifelse(Phylum %in% top_phyla, paste0(Phylum), "Others"))
+sample_abundance <- tmp %>%
+  group_by(Period) %>%
+  summarize(TotalValue = sum(Value))
+tmp <- merge(tmp, sample_abundance, by = "Period")
+tmp$RelativeAbundance <- tmp$Value / tmp$TotalValue
+tmp <- tmp %>%
+  group_by(Period) %>%
+  arrange(RelativeAbundance)
+tmp$Phylum2[which(tmp$Phylum2== "NA")] <- "unidentified"
+custom_colors13 <- c("#774C22", "#965326", 
+                     "#FFE898", 
+                     "#C1A13E", 
+                     "#5D641E",
+                     "#BAD0C4", #muco
+                     "#7CAED1", "#98D3F1", 
+                       "#IHIHBB", "#FFD34C")
+
+tmp_IH <- tmp
+
+#jaccop-------------
+
+JC_fun <- subset_metabarlist(leaf_phy, table = "samples", indices = leaf_phy$samples$Name == "J. copaia")
+
+tmp <-  melt(aggregate(JC_fun$reads, by = list(JC_fun$samples$Period), sum))
+colnames(tmp) <- c("Period", "Phylum", "Value")
+
+phylum_abundance <- aggregate(Value ~ Phylum, data = tmp, sum)
+options(scipen = 999)
+total_sum <- sum(phylum_abundance$Value)
+phylum_proportions <- phylum_abundance %>% mutate(Proportion = Value / total_sum *100)
+phylum_proportions
+top_phyla <- head(phylum_abundance$Phylum[order(phylum_abundance$Value, decreasing = TRUE)],6)
+tmp <- tmp %>%
+  mutate(Phylum2 = ifelse(Phylum %in% top_phyla, paste0(Phylum), "Others"))
+sample_abundance <- tmp %>%
+  group_by(Period) %>%
+  summarize(TotalValue = sum(Value))
+tmp <- merge(tmp, sample_abundance, by = "Period")
+tmp$RelativeAbundance <- tmp$Value / tmp$TotalValue
+tmp <- tmp %>%
+  group_by(Period) %>%
+  arrange(RelativeAbundance)
+tmp$Phylum2[which(tmp$Phylum2== "NA")] <- "unidentified"
+custom_colors13 <- c("#774C22", "#965326", 
+                     "#FFE898", 
+                     "#C1A13E", 
+                     "#5D641E",
+                     "#BAD0C4", #muco
+                     "#7CAED1", "#98D3F1", 
+                       "#JCJCBB", "#FFD34C")
+
+tmp_JC <- tmp
+
+#Pteoff-----------
+
+PO_fun <- subset_metabarlist(leaf_phy, table = "samples", indices = leaf_phy$samples$Name == "P. officinalis")
+tmp <-  melt(aggregate(PO_fun$reads, by = list(PO_fun$samples$Period), sum))
+colnames(tmp) <- c("Period", "Phylum", "Value")
+
+phylum_abundance <- aggregate(Value ~ Phylum, data = tmp, sum)
+options(scipen = 999)
+total_sum <- sum(phylum_abundance$Value)
+phylum_proportions <- phylum_abundance %>% mutate(Proportion = Value / total_sum *100)
+phylum_proportions
+top_phyla <- head(phylum_abundance$Phylum[order(phylum_abundance$Value, decreasing = TRUE)],6)
+tmp <- tmp %>%
+  mutate(Phylum2 = ifelse(Phylum %in% top_phyla, paste0(Phylum), "Others"))
+sample_abundance <- tmp %>%
+  group_by(Period) %>%
+  summarize(TotalValue = sum(Value))
+tmp <- merge(tmp, sample_abundance, by = "Period")
+tmp$RelativeAbundance <- tmp$Value / tmp$TotalValue
+tmp <- tmp %>%
+  group_by(Period) %>%
+  arrange(RelativeAbundance)
+tmp$Phylum2[which(tmp$Phylum2== "NA")] <- "unidentified"
+custom_colors13 <- c("#774C22", "#965326", 
+                     "#FFE898", 
+                     "#C1A13E", 
+                     "#5D641E",
+                     "#BAD0C4", #muco
+                     "#7CAED1", "#98D3F1", 
+                       "#POPOBB", "#FFD34C")
+
+tmp_PO <- tmp
+
+#Sym.glo
+
+SG_fun <- subset_metabarlist(leaf_phy, table = "samples", indices = leaf_phy$samples$Name == "S. globulifera")
+
+
+tmp <-  melt(aggregate(SG_fun$reads, by = list(SG_fun$samples$Period), sum))
+colnames(tmp) <- c("Period", "Phylum", "Value")
+
+phylum_abundance <- aggregate(Value ~ Phylum, data = tmp, sum)
+options(scipen = 999)
+total_sum <- sum(phylum_abundance$Value)
+phylum_proportions <- phylum_abundance %>% mutate(Proportion = Value / total_sum *100)
+phylum_proportions
+top_phyla <- head(phylum_abundance$Phylum[order(phylum_abundance$Value, decreasing = TRUE)],6)
+tmp <- tmp %>%
+  mutate(Phylum2 = ifelse(Phylum %in% top_phyla, paste0(Phylum), "Others"))
+sample_abundance <- tmp %>%
+  group_by(Period) %>%
+  summarize(TotalValue = sum(Value))
+tmp <- merge(tmp, sample_abundance, by = "Period")
+tmp$RelativeAbundance <- tmp$Value / tmp$TotalValue
+tmp <- tmp %>%
+  group_by(Period) %>%
+  arrange(RelativeAbundance)
+tmp$Phylum2[which(tmp$Phylum2== "NA")] <- "unidentified"
+custom_colors13 <- c("#774C22", "#965326", 
+                     "#FFE898", 
+                     "#C1A13E", 
+                     "#5D641E",
+                     "#BAD0C4", #muco
+                     "#7CAED1", "#98D3F1", 
+                       "#SGSGBB", "#FFD34C")
+
+tmp_SG <- tmp
+
+#T.mel----------------
+
+TM_fun <- subset_metabarlist(leaf_phy, table = "samples", indices = leaf_phy$samples$Name == "T. melinonii")
+
+tmp <-  melt(aggregate(TM_fun$reads, by = list(TM_fun$samples$Period), sum))
+colnames(tmp) <- c("Period", "Phylum", "Value")
+
+phylum_abundance <- aggregate(Value ~ Phylum, data = tmp, sum)
+options(scipen = 999)
+total_sum <- sum(phylum_abundance$Value)
+phylum_proportions <- phylum_abundance %>% mutate(Proportion = Value / total_sum *100)
+phylum_proportions
+top_phyla <- head(phylum_abundance$Phylum[order(phylum_abundance$Value, decreasing = TRUE)],6)
+tmp <- tmp %>%
+  mutate(Phylum2 = ifelse(Phylum %in% top_phyla, paste0(Phylum), "Others"))
+sample_abundance <- tmp %>%
+  group_by(Period) %>%
+  summarize(TotalValue = sum(Value))
+tmp <- merge(tmp, sample_abundance, by = "Period")
+tmp$RelativeAbundance <- tmp$Value / tmp$TotalValue
+tmp <- tmp %>%
+  group_by(Period) %>%
+  arrange(RelativeAbundance)
+tmp$Phylum2[which(tmp$Phylum2== "NA")] <- "unidentified"
+custom_colors13 <- c("#774C22", "#965326", 
+                     "#FFE898", 
+                     "#C1A13E", 
+                     "#5D641E",
+                     "#BAD0C4", #muco
+                     "#7CAED1", "#98D3F1", 
+                       "#TMTMBB", "#FFD34C")
+
+tmp_TM <- tmp
+
+#vir sur------
+
+VS_fun <- subset_metabarlist(leaf_phy, table = "samples", indices = leaf_phy$samples$Name == "V. surinamensis")
+
+
+tmp <-  melt(aggregate(VS_fun$reads, by = list(VS_fun$samples$Period), sum))
+colnames(tmp) <- c("Period", "Phylum", "Value")
+
+phylum_abundance <- aggregate(Value ~ Phylum, data = tmp, sum)
+options(scipen = 999)
+total_sum <- sum(phylum_abundance$Value)
+phylum_proportions <- phylum_abundance %>% mutate(Proportion = Value / total_sum *100)
+phylum_proportions
+top_phyla <- head(phylum_abundance$Phylum[order(phylum_abundance$Value, decreasing = TRUE)],6)
+tmp <- tmp %>%
+  mutate(Phylum2 = ifelse(Phylum %in% top_phyla, paste0(Phylum), "Others"))
+sample_abundance <- tmp %>%
+  group_by(Period) %>%
+  summarize(TotalValue = sum(Value))
+tmp <- merge(tmp, sample_abundance, by = "Period")
+tmp$RelativeAbundance <- tmp$Value / tmp$TotalValue
+tmp <- tmp %>%
+  group_by(Period) %>%
+  arrange(RelativeAbundance)
+tmp$Phylum2[which(tmp$Phylum2== "NA")] <- "unidentified"
+custom_colors13 <- c("#774C22", "#965326", 
+                     "#FFE898", 
+                     "#C1A13E", 
+                     "#5D641E",
+                     "#BAD0C4", #muco
+                     "#7CAED1", "#98D3F1", 
+                       "#VSVSBB", "#FFD34C")
+
+tmp_VS <- tmp
+
+```
+
+#combine phylum
+```{r}
+tmp_EF$Host <- "E. falcata"
+tmp_IH$Host <- "I. hostmannii"
+tmp_JC$Host <- "J. copaia"
+tmp_PO$Host <- "P. officinalis"
+tmp_SG$Host <- "S. globulifera"
+tmp_TM$Host <- "T. melinonii"
+tmp_VS$Host <- "V. surinamensis"
+phylum <- rbind(tmp_EF, tmp_IH, tmp_JC, tmp_PO, tmp_SG, tmp_TM, tmp_VS)
+phylum$Period <- dplyr::recode(phylum$Period, "Control" = "C0")
+
+custom_colors23<- c("#774C22", "#965326", 
+                     "#FFE898", 
+                     "#C1A13E", 
+                     "#5D641E",
+                     "#BAD0C4",
+                     "#7CAED1", "#98D3F1", 
+                       "#EFEFBB", "#FFD34C",
+                     "#dad7cd", "#386641", "#A7C957", "#a3b18a", "#B5E48C", "#432818","#F67E13", "#BC3853", "#F3E762", "#64146E", "#A36A69", "#fc03ec", "#a81513") 
+
+#plot
+
+plot_phylum_fun <- phylum %>%
+  ggplot(aes(x = Period, y = RelativeAbundance, fill = Phylum2)) +
+  geom_bar(position = "stack", stat = "identity") +
+  labs(x = NULL, y = "", fill = "Phylum") +
+  scale_fill_manual(values = custom_colors23) +
+ theme_bw(base_size=12) +
+  theme(
+    legend.position = "bottom",
+    legend.title = element_text(hjust = 0.5),
+     legend.direction = "vertical",  # Make the legend vertical
+    legend.box = "vertical",  # Make the legend box vertical
+    axis.text.y = element_text(face = "italic"),
+    legend.key = element_rect(fill = "white"),
+    strip.text = element_text(face = "italic", size = 13),
+    strip.background = element_rect(fill = "white", color = "black", size = 0.5), 
+   panel.border = element_blank() ) +
+  theme(strip.background = element_blank(), axis.text.x = element_text(angle= 60))+
+  guides(fill=guide_legend(ncol=4))+
+  facet_wrap(~Host, ncol = 7)
+
+plot_phylum_fun
+
+ggsave(filename = "./results/microbio/fun_taxo_drought_and_recovery.jpeg", plot = 
+plot_phylum_fun, width = 10, height = 6)
+```
+
+#stats fun
+```{r}
+# Aggregate the metabarlist 
+fun <- subset_metabarlist(leaf, table = "samples", indices = leaf$samples$Time %in% c("t51", "t57", "t101"))
+
+unique(fun$motus$Order)
+unique(fun$motus$Phylum)
+
+fun_C0 <- subset_metabarlist(fun, table = "samples", indices = leaf$samples$Treatment %in% c("C0"))
+fun_D1 <- subset_metabarlist(fun, table = "samples", indices = leaf$samples$Treatment %in% c("D1"))
+fun_D2 <- subset_metabarlist(fun, table = "samples", indices = leaf$samples$Treatment %in% c("D2"))
+fun_D3 <- subset_metabarlist(fun, table = "samples", indices = leaf$samples$Treatment %in% c("D3"))
+
+fun_C0 <-  aggregate_motus(fun_C0, groups= fun_C0$motus$Phylum)
+fun_D1 <-  aggregate_motus(fun_D1, groups= fun_D1$motus$Phylum)
+fun_D2 <-  aggregate_motus(fun_D2, groups= fun_D2$motus$Phylum)
+fun_D3 <-  aggregate_motus(fun_D3, groups= fun_D3$motus$Phylum)
+
+fun_C0 <-  melt(aggregate(fun_C0$reads, by = list(fun_C0$samples$Treatment), sum))
+fun_D1 <-  melt(aggregate(fun_D1$reads, by = list(fun_D1$samples$Treatment), sum))
+fun_D2 <-  melt(aggregate(fun_D2$reads, by = list(fun_D2$samples$Treatment), sum))
+fun_D3 <-  melt(aggregate(fun_D3$reads, by = list(fun_D3$samples$Treatment), sum))
+
+
+colnames(fun_C0) <- c("Treatment", "Phylum", "Value")
+colnames(fun_D1) <- c("Treatment", "Phylum", "Value")
+colnames(fun_D2) <- c("Treatment", "Phylum", "Value")
+colnames(fun_D3) <- c("Treatment", "Phylum", "Value")
+
+Phylum_abundance_C0 <- aggregate(Value ~ Phylum, data = fun_C0, sum)
+Phylum_abundance_D1 <- aggregate(Value ~ Phylum, data = fun_D1, sum)
+Phylum_abundance_D2 <- aggregate(Value ~ Phylum, data = fun_D2, sum)
+Phylum_abundance_D3 <- aggregate(Value ~ Phylum, data = fun_D3, sum)
+
+options(scipen = 999)
+total_sum_C0 <- sum(Phylum_abundance_C0$Value)
+total_sum_D1 <- sum(Phylum_abundance_D1$Value)
+total_sum_D2 <- sum(Phylum_abundance_D2$Value)
+total_sum_D3 <- sum(Phylum_abundance_D3$Value)
+
+Phylum_proportions_C0 <- Phylum_abundance_C0 %>% mutate(Proportion = Value / total_sum_C0 *100)
+Phylum_proportions_D1 <- Phylum_abundance_D1 %>% mutate(Proportion = Value / total_sum_D1 *100)
+Phylum_proportions_D2 <- Phylum_abundance_D2 %>% mutate(Proportion = Value / total_sum_D2 *100)
+Phylum_proportions_D3 <- Phylum_abundance_D3 %>% mutate(Proportion = Value / total_sum_D3 *100)
+
+#brouillon
+colnames(fun) <- c("Treatment", "Phylum", "Value")
+phylum_abundance <- aggregate(Value ~ Phylum, data = fun, sum)
+options(scipen = 999)
+total_sum <- sum(phylum_abundance$Value)
+phylum_proportions <- phylum_abundance %>% mutate(Proportion = Value / total_sum *100)
+phylum_proportions
+
+# Sort the data by the total abundance in descending order
+top_phyla <- head(phylum_abundance$Phylum[order(phylum_abundance$Value, decreasing = TRUE)],6)
+
+#for order
+fun <- subset_metabarlist(leaf, table = "samples", indices = leaf$samples$Time %in% c("t21", "t27", "t71"))
+
+
+fun_C0 <- subset_metabarlist(fun, table = "samples", indices = leaf$samples$Treatment %in% c("C0"))
+fun_D1 <- subset_metabarlist(fun, table = "samples", indices = leaf$samples$Treatment %in% c("D1"))
+fun_D2 <- subset_metabarlist(fun, table = "samples", indices = leaf$samples$Treatment %in% c("D2"))
+fun_D3 <- subset_metabarlist(fun, table = "samples", indices = leaf$samples$Treatment %in% c("D3"))
+
+fun_C0 <-  aggregate_motus(fun_C0, groups= fun_C0$motus$Order)
+fun_D1 <-  aggregate_motus(fun_D1, groups= fun_D1$motus$Order)
+fun_D2 <-  aggregate_motus(fun_D2, groups= fun_D2$motus$Order)
+fun_D3 <-  aggregate_motus(fun_D3, groups= fun_D3$motus$Order)
+
+fun_C0 <-  melt(aggregate(fun_C0$reads, by = list(fun_C0$samples$Treatment), sum))
+fun_D1 <-  melt(aggregate(fun_D1$reads, by = list(fun_D1$samples$Treatment), sum))
+fun_D2 <-  melt(aggregate(fun_D2$reads, by = list(fun_D2$samples$Treatment), sum))
+fun_D3 <-  melt(aggregate(fun_D3$reads, by = list(fun_D3$samples$Treatment), sum))
+
+
+colnames(fun_C0) <- c("Treatment", "Order", "Value")
+colnames(fun_D1) <- c("Treatment", "Order", "Value")
+colnames(fun_D2) <- c("Treatment", "Order", "Value")
+colnames(fun_D3) <- c("Treatment", "Order", "Value")
+
+Order_abundance_C0 <- aggregate(Value ~ Order, data = fun_C0, sum)
+Order_abundance_D1 <- aggregate(Value ~ Order, data = fun_D1, sum)
+Order_abundance_D2 <- aggregate(Value ~ Order, data = fun_D2, sum)
+Order_abundance_D3 <- aggregate(Value ~ Order, data = fun_D3, sum)
+
+options(scipen = 999)
+total_sum_C0 <- sum(Order_abundance_C0$Value)
+total_sum_D1 <- sum(Order_abundance_D1$Value)
+total_sum_D2 <- sum(Order_abundance_D2$Value)
+total_sum_D3 <- sum(Order_abundance_D3$Value)
+
+Order_proportions_C0 <- Order_abundance_C0 %>% mutate(Proportion = Value / total_sum_C0 *100)
+Order_proportions_D1 <- Order_abundance_D1 %>% mutate(Proportion = Value / total_sum_D1 *100)
+Order_proportions_D2 <- Order_abundance_D2 %>% mutate(Proportion = Value / total_sum_D2 *100)
+Order_proportions_D3 <- Order_abundance_D3 %>% mutate(Proportion = Value / total_sum_D3 *100)
+
+
+# Sort the data by the total abundance in descending order
+top_order<- head(Order_abundance$Order[order(Order_abundance$Value, decreasing = TRUE)],6)
+
+#for genus
+fun <- subset_metabarlist(leaf, table = "samples", indices = leaf$samples$Time %in% c("t21", "t27", "t71"))
+fun <- subset_metabarlist(fun, table = "samples", indices = fun$samples$Treatment %in% c("D3"))
+fun <-  aggregate_motus(fun, groups= fun$motus$Genus)
+fun <-  melt(aggregate(fun$reads, by = list(fun$samples$Treatment), sum))
+
+colnames(fun) <- c("Treatment", "Genus", "Value")
+Genus_abundance <- aggregate(Value ~ Genus, data = fun, sum)
+options(scipen = 999)
+total_sum <- sum(Genus_abundance$Value)
+Genus_proportions <- Genus_abundance %>% mutate(Proportion = Value / total_sum *100)
+Genus_proportions
+
+# Sort the data by the total abundance in descending Genus
+top_Genus_control<- head(Genus_abundance$Genus[order(Genus_abundance$Value, decreasing = TRUE)],6)
+
+```
+
+#stats bac
+```{r}
+# Aggregate the metabarlist 
+
+bac <- subset_metabarlist(leaf, table = "samples", indices = leaf$samples$Time %in% c("t21", "t27", "t71"))
+
+bac_C0 <- subset_metabarlist(bac, table = "samples", indices = leaf$samples$Treatment %in% c("C0"))
+bac_D1 <- subset_metabarlist(bac, table = "samples", indices = leaf$samples$Treatment %in% c("D1"))
+bac_D2 <- subset_metabarlist(bac, table = "samples", indices = leaf$samples$Treatment %in% c("D2"))
+bac_D3 <- subset_metabarlist(bac, table = "samples", indices = leaf$samples$Treatment %in% c("D3"))
+unique(bac$motus$Order)
+unique(bac$motus$Phylum)
+
+bac_C0 <-  aggregate_motus(bac_C0, groups= bac_C0$motus$Phylum)
+bac_D1 <-  aggregate_motus(bac_D1, groups= bac_D1$motus$Phylum)
+bac_D2 <-  aggregate_motus(bac_D2, groups= bac_D2$motus$Phylum)
+bac_D3 <-  aggregate_motus(bac_D3, groups= bac_D3$motus$Phylum)
+
+bac_C0 <-  melt(aggregate(bac_C0$reads, by = list(bac_C0$samples$Treatment), sum))
+bac_D1 <-  melt(aggregate(bac_D1$reads, by = list(bac_D1$samples$Treatment), sum))
+bac_D2 <-  melt(aggregate(bac_D2$reads, by = list(bac_D2$samples$Treatment), sum))
+bac_D3 <-  melt(aggregate(bac_D3$reads, by = list(bac_D3$samples$Treatment), sum))
+
+colnames(bac_C0) <- c("Treatment", "Phylum", "Value")
+phylum_abundance <- aggregate(Value ~ Phylum, data = bac_C0, sum)
+
+#D1
+colnames(bac_D1) <- c("Treatment", "Phylum", "Value")
+phylum_abundance <- aggregate(Value ~ Phylum, data = bac_D1, sum)
+
+#D2
+colnames(bac_D2) <- c("Treatment", "Phylum", "Value")
+phylum_abundance <- aggregate(Value ~ Phylum, data = bac_D2, sum)
+
+#D3
+colnames(bac_D3) <- c("Treatment", "Phylum", "Value")
+phylum_abundance <- aggregate(Value ~ Phylum, data = bac_D3, sum)
+
+options(scipen = 999)
+total_sum <- sum(phylum_abundance$Value)
+phylum_proportions <- phylum_abundance %>% mutate(Proportion = Value / total_sum *100)
+
+# Sort the data by the total abundance in descending order
+top_phyla <- head(phylum_abundance$Phylum[order(phylum_abundance$Value, decreasing = TRUE)],6)
+
+#for order
+bac_C0 <-  aggregate_motus(bac_C0, groups= bac_C0$motus$Order)
+bac_D1 <-  aggregate_motus(bac_D1, groups= bac_D1$motus$Order)
+bac_D2 <-  aggregate_motus(bac_D2, groups= bac_D2$motus$Order)
+bac_D3 <-  aggregate_motus(bac_D3, groups= bac_D3$motus$Order)
+
+bac_C0 <-  melt(aggregate(bac_C0$reads, by = list(bac_C0$samples$Treatment), sum))
+bac_D1 <-  melt(aggregate(bac_D1$reads, by = list(bac_D1$samples$Treatment), sum))
+bac_D2 <-  melt(aggregate(bac_D2$reads, by = list(bac_D2$samples$Treatment), sum))
+bac_D3 <-  melt(aggregate(bac_D3$reads, by = list(bac_D3$samples$Treatment), sum))
+
+
+colnames(bac_C0) <- c("Treatment", "Order", "Value")
+colnames(bac_D1) <- c("Treatment", "Order", "Value")
+colnames(bac_D2) <- c("Treatment", "Order", "Value")
+colnames(bac_D3) <- c("Treatment", "Order", "Value")
+
+Order_abundance_C0 <- aggregate(Value ~ Order, data = bac_C0, sum)
+Order_abundance_D1 <- aggregate(Value ~ Order, data = bac_D1, sum)
+Order_abundance_D2 <- aggregate(Value ~ Order, data = bac_D2, sum)
+Order_abundance_D3 <- aggregate(Value ~ Order, data = bac_D3, sum)
+
+options(scipen = 999)
+total_sum_C0 <- sum(Order_abundance_C0$Value)
+total_sum_D1 <- sum(Order_abundance_D1$Value)
+total_sum_D2 <- sum(Order_abundance_D2$Value)
+total_sum_D3 <- sum(Order_abundance_D3$Value)
+
+Order_proportions_C0 <- Order_abundance_C0 %>% mutate(Proportion = Value / total_sum_C0 *100)
+Order_proportions_D1 <- Order_abundance_D1 %>% mutate(Proportion = Value / total_sum_D1 *100)
+Order_proportions_D2 <- Order_abundance_D2 %>% mutate(Proportion = Value / total_sum_D2 *100)
+Order_proportions_D3 <- Order_abundance_D3 %>% mutate(Proportion = Value / total_sum_D3 *100)
+
+Order_proportions 
+
+# Sort the data by the total abundance in descending order
+top_order<- head(Order_abundance$Order[order(Order_abundance$Value, decreasing = TRUE)],6)
+
+#for genus
+bac_C0 <- subset_metabarlist(leaf, table = "samples", indices = leaf$samples$Time %in% c("t51", "t57", "t101"))
+
+bac_C0 <- subset_metabarlist(bac_C0, table = "samples", indices = bac_C0$samples$Treatment %in% c("D2"))
+bac_C0 <-  aggregate_motus(bac_C0, groups= bac_C0$motus$Genus)
+bac_C0 <-  melt(aggregate(bac_C0$reads, by = list(bac_C0$samples$Treatment), sum))
+
+colnames(bac_C0) <- c("Treatment", "Genus", "Value")
+Genus_abundance <- aggregate(Value ~ Genus, data = bac_C0, sum)
+options(scipen = 999)
+total_sum <- sum(Genus_abundance$Value)
+Genus_proportions <- Genus_abundance %>% mutate(Proportion = Value / total_sum *100)
+
+Genus_proportions_D3 <- Genus_proportions
+Genus_proportions_D2 <- Genus_proportions
+Genus_proportions_D1 <- Genus_proportions
+Genus_proportions_C0 <- Genus_proportions
+
+# Sort the data by the total abundance in descending Genus
+top_Genus_control<- head(Genus_abundance$Genus[order(Genus_abundance$Value, decreasing = TRUE)],6)
+
+```
+
+#Stat bac for each species
+```{r}
+# Aggregate the metabarlist 
+bac <- subset_metabarlist(leaf, table = "samples", indices = leaf$samples$Species %in% c("Epe.fal"))
+
+bac <- subset_metabarlist(bac, table = "samples", indices = leaf$samples$Time %in% c("t21", "t27", "t71"))
+
+bac_C0 <- subset_metabarlist(bac, table = "samples", indices = leaf$samples$Treatment %in% c("C0"))
+bac_D1 <- subset_metabarlist(bac, table = "samples", indices = leaf$samples$Treatment %in% c("D1"))
+bac_D2 <- subset_metabarlist(bac, table = "samples", indices = leaf$samples$Treatment %in% c("D2"))
+bac_D3 <- subset_metabarlist(bac, table = "samples", indices = leaf$samples$Treatment %in% c("D3"))
+unique(bac$motus$Order)
+unique(bac$motus$Phylum)
+
+bac_C0 <-  aggregate_motus(bac_C0, groups= bac_C0$motus$Phylum)
+bac_D1 <-  aggregate_motus(bac_D1, groups= bac_D1$motus$Phylum)
+bac_D2 <-  aggregate_motus(bac_D2, groups= bac_D2$motus$Phylum)
+bac_D3 <-  aggregate_motus(bac_D3, groups= bac_D3$motus$Phylum)
+
+bac_C0 <-  melt(aggregate(bac_C0$reads, by = list(bac_C0$samples$Treatment), sum))
+bac_D1 <-  melt(aggregate(bac_D1$reads, by = list(bac_D1$samples$Treatment), sum))
+bac_D2 <-  melt(aggregate(bac_D2$reads, by = list(bac_D2$samples$Treatment), sum))
+bac_D3 <-  melt(aggregate(bac_D3$reads, by = list(bac_D3$samples$Treatment), sum))
+
+colnames(bac_C0) <- c("Treatment", "Phylum", "Value")
+phylum_abundance <- aggregate(Value ~ Phylum, data = bac_C0, sum)
+
+#D1
+colnames(bac_D1) <- c("Treatment", "Phylum", "Value")
+phylum_abundance <- aggregate(Value ~ Phylum, data = bac_D1, sum)
+
+#D2
+colnames(bac_D2) <- c("Treatment", "Phylum", "Value")
+phylum_abundance <- aggregate(Value ~ Phylum, data = bac_D2, sum)
+
+#D3
+colnames(bac_D3) <- c("Treatment", "Phylum", "Value")
+phylum_abundance <- aggregate(Value ~ Phylum, data = bac_D3, sum)
+
+options(scipen = 999)
+total_sum <- sum(phylum_abundance$Value)
+phylum_proportions <- phylum_abundance %>% mutate(Proportion = Value / total_sum *100)
+
+```
+

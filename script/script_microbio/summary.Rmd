@@ -1,0 +1,109 @@
+---
+title: "summary"
+author: "Marion Boisseaux"
+date: "2023-07-03"
+output: html_document
+---
+
+#Microbio summary ITS
+
+```{r}
+library(readr)
+library(dplyr)
+AMVG52 <- read.csv("./results/summary_ITS2_AMVG52.csv") %>%
+  dplyr::select(-X) %>%
+  rename(mean_nb_reads_AMVG52 = mean_nb_reads)%>%
+  rename(mean_nb_motus_AMVG52 = mean_nb_motus) %>%
+  rename(n_count_AMVG52 = n)
+
+AMVG42_230512 <- read.csv("./results/summary_ITS2_AMVG42-230512.csv") %>%
+  dplyr::select(-X) %>%
+  rename(mean_nb_reads_AMVG42_230512 = mean_nb_reads)%>%
+  rename(mean_nb_motus_AMVG42_230512 = mean_nb_motus) %>%
+  rename(n_count_AMVG42_230512 = n)
+
+summary_ITS <- left_join(AMVG42_230512, AMVG52)
+
+AMVG42_230505 <- read.csv("./results/summary_ITS2_AMVG42_230505.csv") %>%
+  dplyr::select(-X) %>%
+  rename(mean_nb_reads_AMVG42_230505 = mean_nb_reads)%>%
+  rename(mean_nb_motus_AMVG42_230505 = mean_nb_motus) %>%
+  rename(n_count_AMVG42_230505 = n)
+
+summary_ITS <- left_join(summary_ITS, AMVG42_230505)
+
+summary_ITS <- summary_ITS %>%
+  relocate(organ, .before = Species) %>%
+  relocate(n_count_AMVG42_230512, .after = n_count_AMVG52) %>%
+  relocate(mean_nb_reads_AMVG42_230512, .after = mean_nb_reads_AMVG52) %>%
+  relocate(mean_nb_motus_AMVG42_230512, .after = mean_nb_motus_AMVG52) %>%
+  relocate(mean_nb_motus_AMVG42_230505, .after = mean_nb_motus_AMVG42_230512) %>%
+  relocate(mean_nb_reads_AMVG42_230505, .after = mean_nb_reads_AMVG42_230512)
+
+names(summary_ITS)
+
+#counts
+count <- summary_ITS %>%
+  group_by(Time, Treatment, Species) %>%
+  summarise(n = n_count_AMVG42_230505)
+
+#resistance
+count21 <- count %>% filter(Time == 't21') 
+count27 <- count %>% filter(Time == 't27') 
+count71 <- count %>% filter(Time == 't71') 
+
+#resilience
+count51 <- count %>% filter(Time == 't51') 
+count57 <- count %>% filter(Time == 't57') 
+count101 <- count %>% filter(Time == 't101') 
+
+#save
+write.csv(summary_ITS, "summary_ITS.csv")
+```
+
+#Microbio summary for bacteria 16S
+```{r}
+library(readr)
+library(dplyr)
+AMVG41230512 <- read.csv("./results/summary_16S_AMVG41_230512.csv") %>%
+  dplyr::select(-X) %>%
+  rename(mean_nb_reads_AMVG41_230512 = mean_nb_reads)%>%
+  rename(mean_nb_motus_AMVG41_230512 = mean_nb_motus) %>%
+  rename(n_count_AMVG41_230512 = n)
+
+AMVG41230505 <- read.csv("./results/summary_16S_AMVG41_230505.csv") %>%
+  dplyr::select(-X) %>%
+  rename(mean_nb_reads_AMVG41_230505 = mean_nb_reads)%>%
+  rename(mean_nb_motus_AMVG41_230505 = mean_nb_motus) %>%
+  rename(n_count_AMVG41_230505 = n)
+
+summary_16S <- left_join(AMVG41230512, AMVG41230505)
+
+summary_16S <- summary_16S %>%
+  relocate(organ, .before = Species) %>%
+  relocate(n_count_AMVG41_230505, .after = n_count_AMVG41_230512) %>%
+  relocate(mean_nb_reads_AMVG41_230505, .after = mean_nb_reads_AMVG41_230512) %>%
+  relocate(mean_nb_motus_AMVG41_230505, .after = mean_nb_motus_AMVG41_230512)
+
+names(summary_16S)
+
+#count
+##
+count <- summary_16S %>%
+  group_by(Time, Treatment, Species) %>%
+  summarise(n = n_count_AMVG41_230505)
+
+#resistance
+count21 <- count %>% filter(Time == 't21') 
+count27 <- count %>% filter(Time == 't27') 
+count71 <- count %>% filter(Time == 't71') 
+
+#resilience
+count51 <- count %>% filter(Time == 't51') 
+count57 <- count %>% filter(Time == 't57') 
+count101 <- count %>% filter(Time == 't101') 
+
+
+write.csv(summary_16S, "summary_16S.csv")
+```
+
